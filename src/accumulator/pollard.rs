@@ -70,66 +70,42 @@ impl Pollard {
 
         // recurse from the right side of the tree until we hit a tree with no root
         // Destorys roots along the way
-        fn add(pol: &mut Pollard, node: &mut PolNode, num_leaves: u64) -> PolNode{
-            let mut return_node = node.clone();
+        fn add(pol: &mut Pollard, mut node: PolNode, num_leaves: u64) -> PolNode {
 
             if num_leaves & 1 == 1 {
-                match &mut pol.roots {
-                    // if num_leaves & 1 is true, pol.roots can't be none
-                    None => (),
-                    Some(roots) => {
-                        //let before_len = roots.clone().len();
-                        let mut left_root = roots.pop().unwrap();
-                        //assert_ne!(roots.clone().len(), before_len); // sanity
+                // If num_leaves & 1 == 1, roots cannot be None
+                let mut left_root =  pol.roots
+                                                .as_mut()
+                                                .unwrap()
+                                                .pop()
+                                                .unwrap();
 
-                        mem::swap(&mut left_root.l_niece, &mut node.l_niece);
-                        mem::swap(&mut left_root.r_niece, &mut node.r_niece);
+                mem::swap(&mut left_root.l_niece, &mut node.l_niece);
+                mem::swap(&mut left_root.r_niece, &mut node.r_niece);
 
-                        let n_hash = types::parent_hash(&left_root.data.clone(), &node.data.clone());
-                        let new_node = &mut PolNode {
-                            data: n_hash,
-                            l_niece: Some(Box::new(left_root)),
-                            r_niece: Some(Box::new(node.clone())),
-                        };
+                let n_hash = types::parent_hash(&left_root.data.clone(), &node.data.clone());
+                
+                let new_node = PolNode::new (
+                                                   n_hash,
+                                                 Some(Box::new(left_root)),
+                                                 Some(Box::new(node.clone()))
+                                                    );
 
-                        //new_node.prune();
-                        return_node = add(pol, new_node, num_leaves>>1);
-                    },
-                }
+                return add(pol, new_node, num_leaves >> 1);
             }
 
-            return_node
+            node
         }
 
         // init node. If the Pollard is perfect (meaning only one root), this will become a
         // new root
-        let mut node = &mut PolNode {
+        let node = PolNode {
             data: utxo,
             l_niece: None,
             r_niece: None,
         };
 
-        let add_node = add(self, &mut node, self.num_leaves);
-
-        //match add_node.l_niece.clone() {
-        //    None => {
-        //        println!("NO left niceses");
-        //    },
-        //    Some(node) => {
-        //        println!("YES");
-        //        println!("{:?}", node.data);
-        //    }
-        //}
-        //match add_node.r_niece.clone() {
-        //    None => {
-        //        println!("NO right niceses");
-        //    },
-        //    Some(node) => {
-        //        println!("YES");
-        //        println!("{:?}", node.data);
-        //    }
-        //}
-
+        let add_node = add(self, node, self.num_leaves);
 
         match &mut self.roots {
             None => {
@@ -310,7 +286,13 @@ impl PolNode {
         self.l_niece = None;
         self.r_niece = None;
     }
-
+    fn new(data: sha256::Hash, l_niece: Option<Box<PolNode>>, r_niece: Option<Box<PolNode>>) -> PolNode {
+        PolNode {
+            data,
+            l_niece,
+            r_niece
+        }
+    }
     fn prune(&mut self) {
         match &mut self.l_niece {
             None => (),
@@ -468,28 +450,15 @@ mod tests {
 
         let mut pol = super::Pollard::new();
 
-        for i in 0..50000 {
+        for i in 0..500000 {
             let mut engine = bitcoin::hashes::sha256::Hash::engine();
-            let num: &[u8; 1] = &[(i % 255) as u8];
-            engine.input(num);
+            engine.input(&[(i % 255) as u8]);
             let h = sha256::Hash::from_engine(engine);
             let leaf = types::Leaf{hash: h, remember: false};
-
             pol.modify(vec![leaf], vec![]);
-
-            if i % 10000 == 0 {
-                check_count(pol.num_leaves, pol.roots.clone().unwrap().len());
-            }
-
-            // Check if power of two
-            //if (i != 0) && ((i & (i - 1)) == 0) {
-
-            //}
         }
-
-        check_count(pol.num_leaves, pol.roots.clone().unwrap().len());
-
-        pollard_add_five();
+        // After an execution, check the number of Pollard's roots
+        check_count(pol.num_leaves, pol.roots.as_ref().unwrap().len());
     }
 
     #[test]
