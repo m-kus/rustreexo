@@ -98,7 +98,7 @@ impl Pollard {
                 }
             }
 
-            return return_node;
+            return_node
         }
 
         // init node. If the Pollard is perfect (meaning only one root), this will become a

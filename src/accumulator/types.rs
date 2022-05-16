@@ -46,5 +46,5 @@ pub fn parent_hash(left: &sha256::Hash, right: &sha256::Hash) -> sha256::Hash {
     engine.input(left);
     engine.input(right);
 
-    return sha256::Hash::from_engine(engine);
+    sha256::Hash::from_engine(engine)
 }

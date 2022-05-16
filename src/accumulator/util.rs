@@ -22,7 +22,7 @@ pub fn extract_twins(nodes: Vec<u64>, forest_rows: u8) -> (Vec<u64>, Vec<u64>) {
         }
     }
 
-    return (parents, twined);
+    (parents, twined)
 }
 
 // detectSubTreeHight finds the rows of the subtree a given LEAF position and
@@ -39,7 +39,7 @@ pub fn detect_sub_tree_rows(pos: u64, num_leaves: u64, forest_rows: u8) -> u8 {
         h -= 1;
     }
 
-    return h;
+    h
 }
 
 // detectRow finds the current row of a node, given the position
@@ -53,7 +53,7 @@ pub fn detect_row(pos: u64, forest_rows: u8) -> u8 {
         h += 1;
     }
 
-    return h;
+    h
 }
 
 // getRowOffset returns the first position of that row
@@ -117,13 +117,13 @@ pub fn detect_offset(pos: u64, num_leaves: u64) -> (u8, u8, u64) {
         tr -= 1;
     }
 
-    return (bigger_trees, tr - nr, !marker);
+    (bigger_trees, tr - nr, !marker)
 }
 
 // child gives you the left child (LSB will be 0)
 fn child(pos: u64, forest_rows: u8) -> u64 {
     let mask = (2 << forest_rows) - 1;
-    return (pos << 1) & mask;
+    (pos << 1) & mask
 }
 
 // n_grandchild returns the positions of the left grandchild (LSB will be 0)
@@ -137,7 +137,7 @@ fn n_grandchild(pos: u64, drop: u8, forest_rows: u8) -> Result<u64, u8> {
         return Err(1);
     }
     let mask = (2 << forest_rows) - 1;
-    return Ok((pos << drop) & mask);
+    Ok((pos << drop) & mask)
 }
 
 // parent returns the parent position of the passed in child
@@ -184,7 +184,7 @@ pub fn in_forest(mut pos: u64, num_leaves: u64, forest_rows: u8) -> bool {
         pos = ((pos << 1) & mask) | 1;
     }
 
-    return pos < num_leaves;
+    pos < num_leaves
 }
 
 // tree_rows returns the number of rows given n leaves
@@ -250,7 +250,7 @@ fn previous_pow2(n: u64) -> u64 {
     x = x | (x >> 8);
     x = x | (x >> 16);
     x = x | (x >> 32);
-    return x - (x >> 1);
+    x - (x >> 1)
 }
 
 // next_pow2 returns the next power of 2

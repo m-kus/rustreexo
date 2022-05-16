@@ -52,7 +52,7 @@ twin_nextdels.0.append(&mut swap_nextdels);
         }
     }
 
-    return swaps;
+    swaps
 }
 
 fn make_swaps(mut dels: Vec<u64>, del_remain: bool, root_present: bool, root_pos: u64) -> Vec<types::Arrow> {
@@ -79,7 +79,7 @@ if del_remain && root_present {
         row_swaps[i] = types::Arrow{from: root_pos, to: dels[0]}
     }
 
-    return row_swaps;
+    row_swaps
 }
 
 fn make_collapse(mut dels: Vec<u64>, del_remain: bool, root_present: bool, next_n_leaves: u64, n_leaves: u64, row: u8, forest_rows: u8) -> Option<types::Arrow> {
@@ -87,11 +87,11 @@ fn make_collapse(mut dels: Vec<u64>, del_remain: bool, root_present: bool, next_
 
     if !del_remain && root_present {
         let root_src = util::root_position(n_leaves, row, forest_rows);
-        return Some(types::Arrow{from: root_src, to: root_dest});
+        Some(types::Arrow{from: root_src, to: root_dest})
 
     } else if del_remain && !root_present {
         let root_src = dels.pop().unwrap() ^ 1;
-        return Some(types::Arrow{from: root_src, to: root_dest});
+        Some(types::Arrow{from: root_src, to: root_dest})
 
     } else {
         None
@@ -123,7 +123,7 @@ fn makeswap_nextdels(mut dels: Vec<u64>, del_remain: bool, root_present: bool, f
         swap_nextdels[i] = util::parent(dels[0], forest_rows);
     }
 
-    return swap_nextdels;
+    swap_nextdels
 }
 
 fn swap_collapses(swaps: &mut Vec<Vec<types::Arrow>>, collapses: &mut Vec<Vec<types::Arrow>>, forest_rows: u8) {
@@ -177,6 +177,5 @@ fn swap_if_descendant(a: &types::Arrow, b: &types::Arrow, ar: u8, br: u8, forest
         sub_mask = root_mask << hdiff;
     }
 
-    return sub_mask;
-
+    sub_mask
 }
