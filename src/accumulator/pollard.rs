@@ -1,6 +1,6 @@
 // Rustreexo
 
-use std::collections::HashMap;
+use std::{collections::HashMap, task::Poll};
 use std::mem;
 
 use super::{
@@ -62,41 +62,37 @@ impl Pollard {
             Pollard::add_single(self, add.hash, false);
         }
     }
+    // recurse from the right side of the tree until we hit a tree with no root
+    // Destroys roots along the way
+    fn create_root(pol: &mut Pollard, mut node: PolNode, num_leaves: u64) -> PolNode {
+        if num_leaves & 1 == 1 {
+            // If num_leaves & 1 == 1, roots cannot be None
+            let mut left_root =  pol.roots
+                                            .as_mut()
+                                            .unwrap()
+                                            .pop()
+                                            .unwrap();
 
+            mem::swap(&mut left_root.l_niece, &mut node.l_niece);
+            mem::swap(&mut left_root.r_niece, &mut node.r_niece);
+
+            let n_hash = types::parent_hash(&left_root.data, &node.data);
+                
+            let new_node = PolNode::new (
+                                                n_hash,
+                                            Some(Box::new(left_root)),
+                                            Some(Box::new(node.clone()))
+                                                );
+
+            return Pollard::create_root(pol, new_node, num_leaves >> 1);
+        }
+
+        node
+    }
     // AddSingle adds a single given utxo to the tree
     // TODO activate caching (use remember). This isn't done in the
     // Go repo either yet
     fn add_single(&mut self, utxo: sha256::Hash, remember: bool) {
-
-        // recurse from the right side of the tree until we hit a tree with no root
-        // Destorys roots along the way
-        fn add(pol: &mut Pollard, mut node: PolNode, num_leaves: u64) -> PolNode {
-
-            if num_leaves & 1 == 1 {
-                // If num_leaves & 1 == 1, roots cannot be None
-                let mut left_root =  pol.roots
-                                                .as_mut()
-                                                .unwrap()
-                                                .pop()
-                                                .unwrap();
-
-                mem::swap(&mut left_root.l_niece, &mut node.l_niece);
-                mem::swap(&mut left_root.r_niece, &mut node.r_niece);
-
-                let n_hash = types::parent_hash(&left_root.data.clone(), &node.data.clone());
-                
-                let new_node = PolNode::new (
-                                                   n_hash,
-                                                 Some(Box::new(left_root)),
-                                                 Some(Box::new(node.clone()))
-                                                    );
-
-                return add(pol, new_node, num_leaves >> 1);
-            }
-
-            node
-        }
-
         // init node. If the Pollard is perfect (meaning only one root), this will become a
         // new root
         let node = PolNode {
@@ -105,7 +101,7 @@ impl Pollard {
             r_niece: None,
         };
 
-        let add_node = add(self, node, self.num_leaves);
+        let add_node = Pollard::create_root(self, node, self.num_leaves);
 
         match &mut self.roots {
             None => {
