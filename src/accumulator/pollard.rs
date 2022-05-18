@@ -25,7 +25,7 @@ pub struct Pollard {
     /// Roots are the top-most nodes of the tree
     /// There may be multiple roots as Utreexo is organized as a
     /// collection of perfect trees.
-    pub roots: Option<Vec<PolNode>>,
+    pub roots: Vec<PolNode>,
 
     /// Total number of leaves (nodes on the bottom row) in the Pollard
     pub num_leaves: u64,
@@ -34,7 +34,7 @@ pub struct Pollard {
 impl Pollard {
     /// Returns a new pollard
     pub fn new() -> Pollard {
-        Pollard{roots: None, num_leaves:0, }
+        Pollard{roots: Vec::new(), num_leaves:0, }
     }
 
     /// Modify changes the Utreexo tree state given the utxos and stxos
@@ -68,8 +68,6 @@ impl Pollard {
         if num_leaves & 1 == 1 {
             // If num_leaves & 1 == 1, roots cannot be None
             let mut left_root =  pol.roots
-                                            .as_mut()
-                                            .unwrap()
                                             .pop()
                                             .unwrap();
 
@@ -103,14 +101,7 @@ impl Pollard {
 
         let add_node = Pollard::create_root(self, node, self.num_leaves);
 
-        match &mut self.roots {
-            None => {
-                self.roots = Some(vec![add_node; 1]);
-            },
-            Some(root) => {
-                root.push(add_node)
-            }
-        }
+        self.roots.push(add_node);
 
         // increment leaf count
         self.num_leaves += 1;
@@ -189,7 +180,7 @@ impl Pollard {
         }
 
         // Grab the tree that the position is at
-        let (tree, branch_len, bits) = util::detect_offset(pos, self.num_leaves);
+        let (tree, branch_len, bits) = util::detect_offset(pos, self.num_leaves)?;
 
         match &self.roots {
             None => {
@@ -254,8 +245,83 @@ impl Pollard {
             }
         }
     }
-}
 
+    // fn grab_pos(&self, pos: u64) -> Result<(PolNode, PolNode, HashableNode), String> {
+    //     // grabs nieces until it hits 1 above bottom. The nodes returned
+    //     // here are from row 1, not row 0
+    //     if self.roots.len() == 0 as usize {
+    //         return Err(String::from("Asking for position in a empty Pollard"));
+    //     }
+
+    //     // Grab the tree that the position is at
+    //     let (tree, branch_len, bits)  = util::detect_offset(pos, self.num_leaves)?;
+    //     Pollard::grab_niece(node, node_sib, branch_len, bits);
+
+    //     return Ok((p_node, p_node_sib, hnode));
+    // }
+}
+/*match &self.roots {
+            None => {
+                return Err("grab_pos called on an empty pollard".to_string());
+            },
+            Some(root) => {
+                if tree as usize >= root.len() {
+                    return Err("Pos asked for out of bounds for the current pollard".to_string());
+                }
+
+                let node = root[tree as usize].clone();
+                let node_sib = root[tree as usize].clone();
+
+                match grab_niece(node, node_sib, branch_len, bits) {
+                    None => {
+                        return Err("Pos asked for out of bounds for the current pollard".to_string());
+                    },
+                    Some((mut p_node, mut p_node_sib, branch_len)) => {
+                        let hnode = HashableNode {
+                            dest: Some(Box::new(p_node_sib.clone() )),
+                            sib: Some(Box::new(p_node.clone() )),
+                            position: pos
+                        };
+
+                        //let lr = bits>>branch_len & 1;
+                        //let lr_sib = lr ^ 1;
+
+                        // 0 is the left, 1 is the right as
+                        //if lr_sib == 0 {
+                        //    match &mut p_node.l_niece {
+                        //        None => (),
+                        //        Some(niece) => {
+                        //            p_node = *niece.clone()
+                        //        }
+                        //    }
+
+                        //    match &mut p_node.r_niece {
+                        //        None => (),
+                        //        Some(niece) => {
+                        //            p_node_sib = *niece.clone()
+                        //        }
+                        //    }
+                        //} else {
+                        //    match &mut p_node.r_niece {
+                        //        None => (),
+                        //        Some(niece) => {
+                        //            p_node = *niece.clone()
+                        //        }
+                        //    }
+
+                        //    match &mut p_node.l_niece {
+                        //        None => (),
+                        //        Some(niece) => {
+                        //            p_node_sib = *niece.clone()
+                        //        }
+                        //    }
+                        //}
+
+                        return Ok((p_node, p_node_sib, hnode));
+                    }
+                }
+            }
+        }*/
 /// PolNode represents a node in the utreexo pollard tree. It points
 /// to its nieces
 #[derive(Clone)]
@@ -390,7 +456,7 @@ mod tests {
 
     fn check_root() {
     }
-
+    #[test]
     fn test_pol_del() {
         use bitcoin::hashes::{sha256, Hash, HashEngine};
         use super::types;
@@ -408,7 +474,7 @@ mod tests {
             let leaf = types::Leaf{hash: h, remember: false};
 
             // add one leaf
-            &pol.modify(vec![leaf], vec![]);
+            pol.modify(vec![leaf], vec![]);
         }
 
         for i in 0..4 {
@@ -428,6 +494,7 @@ mod tests {
             }
         }
         let node = pol.grab_pos(14);
+
         match node {
             Err(e) => (panic!("no pollard node found")),
             Ok((node, node_sib, hn)) => {

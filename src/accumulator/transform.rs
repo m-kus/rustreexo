@@ -17,7 +17,7 @@ pub fn transform(mut dels: Vec<u64>, num_leaves: u64, forest_rows: u8) -> Vec<Ve
         let root_pos = util::root_position(num_leaves, row, forest_rows);
 
         // Does root exist. And is the last element in the root position
-        if root_present && dels.last().unwrap() == &root_pos {
+        if root_present && *dels.last().unwrap() == root_pos {
             dels.pop();
 
             // this is the same as running num_leaves&(1<<row) != 0; again
@@ -36,7 +36,8 @@ pub fn transform(mut dels: Vec<u64>, num_leaves: u64, forest_rows: u8) -> Vec<Ve
         collapses[row as usize] = vec!(make_collapse(dels.clone(), del_remain, root_present, next_n_leaves, num_leaves, row, forest_rows).unwrap());
 
         let mut swap_nextdels = makeswap_nextdels(dels.clone(), del_remain, root_present, forest_rows);
-twin_nextdels.0.append(&mut swap_nextdels);
+        
+        twin_nextdels.0.append(&mut swap_nextdels);
         twin_nextdels.0.dedup();
         twin_nextdels.0.sort();
 
@@ -57,7 +58,7 @@ twin_nextdels.0.append(&mut swap_nextdels);
 
 fn make_swaps(mut dels: Vec<u64>, del_remain: bool, root_present: bool, root_pos: u64) -> Vec<types::Arrow> {
     let n_swaps;
-if del_remain && root_present {
+    if del_remain && root_present {
         n_swaps = (dels.len() >> 1) + 1;
     } else {
         n_swaps = dels.len() >> 1;
