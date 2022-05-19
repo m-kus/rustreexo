@@ -78,9 +78,11 @@ impl Pollard {
                 
             let new_node = PolNode::new (
                                                 n_hash,
-                                            Some(Box::new(left_root)),
+                                            Some(Box::new(left_root.clone())),
                                             Some(Box::new(node.clone()))
                                                 );
+            left_root.aunt = Some(Box::from(new_node.clone()));
+            node.aunt = Some(Box::from(new_node.clone()));
 
             return Pollard::create_root(pol, new_node, num_leaves >> 1);
         }
@@ -95,6 +97,7 @@ impl Pollard {
         // new root
         let node = PolNode {
             data: utxo,
+            aunt: None,
             l_niece: None,
             r_niece: None,
         };
@@ -107,74 +110,79 @@ impl Pollard {
         self.num_leaves += 1;
     }
 
-    fn remove(&mut self, mut dels: Vec<u64>) {
+    fn remove(&mut self, dels: Vec<u64>) -> Result <usize, String> {
         // if there is nothing to delete, return
         if dels.len() == 0 {
-            return
+            return Ok(self.num_leaves as usize);
         }
 
         let pollard_rows = util::tree_rows(self.num_leaves);
 
         let leaves_after_del = self.num_leaves - dels.len() as u64;
 
-        // get all the swaps, then apply them all
-        let swap_rows = transform::transform(dels, self.num_leaves, pollard_rows);
+        for i in dels.iter() {
+            let (tree, node, bits) = util::detect_offset(*i, self.num_leaves).unwrap();
+            let mut node = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?.to_owned();
+            node.l_niece = None;
+            node.r_niece = None;
+        }
 
-        println!("{:?}", swap_rows);
-
-        //let hash_dirt: Vec<u64>;
-        //let next_hash_dirt: Vec<u64>;
-        //let prev_hash: u64;
-
-        //for row in 0..pollard_rows {
-        //}
-
+        Ok(leaves_after_del as usize)
     }
-    fn grab_niece(p_node: &PolNode, branch_len: u8, bits: u64) -> Result<(PolNode, PolNode, u8), String> {
-        // calculate the left root. 0 means left_niece, 1 means right_niece
-        let mut node = p_node;
-        let mut node_sib  = &PolNode::default();
+    fn get_node(node: &PolNode, branch_len: u8, bits: u64) -> Result <&PolNode, String>{
         let mut len = branch_len;
-
+        let mut node = node;
         while len >= 1 {
             let lr = bits << len & 1;
             if lr == 0 {
-                node = &node.l_niece.as_ref().unwrap();
-                node_sib = &node.r_niece.as_ref().unwrap();
-
+                if let Some(r_niece) = &node.r_niece {
+                    node = r_niece.as_ref();
+                }
             } else {
-                node = &node.r_niece.as_ref().unwrap();
-                node_sib = node.r_niece.as_ref().unwrap();
+                if let Some(l_niece) = &node.l_niece {
+                    node = l_niece.as_ref();
+                }
             }
-            
             len -= 1;
         }
-
-        Ok((node.clone(), node_sib.clone(), branch_len))
+        Ok(node)
     }
-    fn grab_pos(&mut self, pos: u64) -> Result<(PolNode, PolNode, HashableNode), String> {
-        // grabs nieces until it hits 1 above bottom. The nodes returned
-        // here are from row 1, not row 0
 
-        // Grab the tree that the position is at
-        let (tree, branch_len, bits) = util::detect_offset(pos, self.num_leaves)?;
-        
-        if tree as usize >= self.roots.len() {
-            return Err(String::from("Pos asked for out of bounds for the current pollard"));
+    fn get_new_tree(node: &mut PolNode) {
+        if node.l_niece.is_some() {
+            //aunt thing
+            //node.l_niece = None;
         }
-
-        let node = self.roots[tree as usize].clone();
-
-        let (node, node_sib, branch_len) = Pollard::grab_niece(&Box::from(node), branch_len, bits)?;
+        node.l_niece = None;
         
-        let h_node = HashableNode {
-            dest: Some(Box::new(node_sib.clone())),
-            sib: Some(Box::new(node.clone())),
-            position: pos
-        };
-
-        Ok((node, node_sib, h_node))
+        if node.r_niece.is_some() {
+            //aunt thing
+            //node.l_niece = None;
+        }
+        node.r_niece = None;
     }
+    // fn remove_one(tree: PolNode, bits:u64, branch_len: u8) -> Result<u8, String> {
+
+    //     let mut len = branch_len;
+
+    //     while len >= 1 {
+    //         let lr = bits << len & 1;
+    //         if lr == 0 {
+    //             if let Some(r_niece) = node.r_niece {
+    //                 node = *r_niece;
+    //             }
+    //         } else {
+    //             if let Some(l_niece) = node.l_niece {
+    //                 node = *l_niece;
+    //             }
+    //         }
+    //         len -= 1;
+    //     }
+    //     self.roots[tree as usize] = node;
+    
+        
+    //     Ok(0)
+    // }
 
 }
 
@@ -184,7 +192,7 @@ impl Pollard {
 pub struct PolNode {
     // The hash
     pub data: sha256::Hash,
-
+    pub aunt: Option<Box<PolNode>>,
     pub l_niece: Option<Box<PolNode>>,
     pub r_niece: Option<Box<PolNode>>,
 }
@@ -207,6 +215,7 @@ impl PolNode {
     fn new(data: sha256::Hash, l_niece: Option<Box<PolNode>>, r_niece: Option<Box<PolNode>>) -> PolNode {
         PolNode {
             data,
+            aunt: None,
             l_niece,
             r_niece
         }
@@ -231,13 +240,6 @@ impl PolNode {
         }
     }
 }
-
-//// hashableNode is the data needed to perform a hash
-//pub struct HashableNode<'a> {
-//    sib: &'a PolNode,
-//    dest: &'a PolNode,
-//    position: u64 // doesn't really need to be there, but convenient for debugging
-//}
 
 // hashableNode is the data needed to perform a hash
 pub struct HashableNode {
@@ -264,55 +266,55 @@ mod tests {
 
     fn check_root() {
     }
-    #[test]
-    fn test_pol_del() {
-        use bitcoin::hashes::{sha256, Hash, HashEngine};
-        use super::types;
+    // #[test]
+    // fn test_pol_del() {
+    //     use bitcoin::hashes::{sha256, Hash, HashEngine};
+    //     use super::types;
 
-        let mut pol = super::Pollard::new();
+    //     let mut pol = super::Pollard::new();
 
-        for i in 0..5 {
-            // boilerplate hashgen
-            // TODO maybe there's a better way?
-            let mut engine = bitcoin::hashes::sha256::Hash::engine();
-            let num: &[u8; 1] = &[i as u8];
-            engine.input(num);
-            let h = sha256::Hash::from_engine(engine);
-            println!("for i {}: {:?}", i, &h);
-            let leaf = types::Leaf{hash: h, remember: false};
+    //     for i in 0..5 {
+    //         // boilerplate hashgen
+    //         // TODO maybe there's a better way?
+    //         let mut engine = bitcoin::hashes::sha256::Hash::engine();
+    //         let num: &[u8; 1] = &[i as u8];
+    //         engine.input(num);
+    //         let h = sha256::Hash::from_engine(engine);
+    //         println!("for i {}: {:?}", i, &h);
+    //         let leaf = types::Leaf{hash: h, remember: false};
 
-            // add one leaf
-            pol.modify(vec![leaf], vec![]);
-        }
+    //         // add one leaf
+    //         pol.modify(vec![leaf], vec![]);
+    //     }
 
-        for i in 0..4 {
-            let node = pol.grab_pos(i);
-            match node {
-                Err(e) => (panic!("no pollard node found")),
-                Ok((node, node_sib, hn)) => {
-                    let mut engine = bitcoin::hashes::sha256::Hash::engine();
-                    let num: &[u8; 1] = &[i as u8];
-                    engine.input(num);
-                    let h = sha256::Hash::from_engine(engine);
+    //     for i in 0..4 {
+    //         let node = pol.grab_pos(i);
+    //         match node {
+    //             Err(e) => (panic!("no pollard node found")),
+    //             Ok((node, node_sib, hn)) => {
+    //                 let mut engine = bitcoin::hashes::sha256::Hash::engine();
+    //                 let num: &[u8; 1] = &[i as u8];
+    //                 engine.input(num);
+    //                 let h = sha256::Hash::from_engine(engine);
 
-                    println!("fetched node hash {}: {:?}", i, &node.l_niece.unwrap().data);
-                    println!("fetched node_sib hash: {:?}", &node_sib.data);
-                    println!("calculated 0 hash: {:?}", h);
-                }
-            }
-        }
-        let node = pol.grab_pos(14);
+    //                 println!("fetched node hash {}: {:?}", i, &node.l_niece.unwrap().data);
+    //                 println!("fetched node_sib hash: {:?}", &node_sib.data);
+    //                 println!("calculated 0 hash: {:?}", h);
+    //             }
+    //         }
+    //     }
+    //     let node = pol.grab_pos(14);
 
-        match node {
-            Err(e) => (panic!("no pollard node found")),
-            Ok((node, node_sib, hn)) => {
-                println!("fetched node hash {}: {:?}", 8, &node.l_niece.unwrap().data);
-            }
-        }
+    //     match node {
+    //         Err(e) => (panic!("no pollard node found")),
+    //         Ok((node, node_sib, hn)) => {
+    //             println!("fetched node hash {}: {:?}", 8, &node.l_niece.unwrap().data);
+    //         }
+    //     }
 
 
-        //pol.modify(vec![], vec![0]);
-    }
+    //pol.modify(vec![], vec![0]);
+    //}
 
     #[test]
     fn test_pol_add() {
@@ -321,7 +323,7 @@ mod tests {
 
         let mut pol = super::Pollard::new();
 
-        for i in 0..3 {
+        for i in 0..4 {
             let mut engine = bitcoin::hashes::sha256::Hash::engine();
             engine.input(&[(i % 255) as u8]);
             let h = sha256::Hash::from_engine(engine);
@@ -329,6 +331,9 @@ mod tests {
             pol.modify(vec![leaf], vec![]);
         }
         println!("{:#?}", pol);
+        pol.remove(vec![0]);
+        println!("{:#?}", pol);
+
         // After an execution, check the number of Pollard's roots
         //check_count(pol.num_leaves, pol.roots.as_ref().unwrap().len());
     }
