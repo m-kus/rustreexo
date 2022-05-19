@@ -20,7 +20,7 @@ use bitcoin::hashes::{sha256, Hash, HashEngine};
 ///
 /// Its structure resembles of that of a binary tree, except that
 /// the pointers point to aunts - nieces, not parents - children
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Pollard {
     /// Roots are the top-most nodes of the tree
     /// There may be multiple roots as Utreexo is organized as a
@@ -130,201 +130,57 @@ impl Pollard {
         //}
 
     }
+    fn grab_niece(p_node: &PolNode, branch_len: u8, bits: u64) -> Result<(PolNode, PolNode, u8), String> {
+        // calculate the left root. 0 means left_niece, 1 means right_niece
+        let mut node = p_node;
+        let mut node_sib  = &PolNode::default();
+        let mut len = branch_len;
 
+        while len >= 1 {
+            let lr = bits << len & 1;
+            if lr == 0 {
+                node = &node.l_niece.as_ref().unwrap();
+                node_sib = &node.r_niece.as_ref().unwrap();
+
+            } else {
+                node = &node.r_niece.as_ref().unwrap();
+                node_sib = node.r_niece.as_ref().unwrap();
+            }
+            
+            len -= 1;
+        }
+
+        Ok((node.clone(), node_sib.clone(), branch_len))
+    }
     fn grab_pos(&mut self, pos: u64) -> Result<(PolNode, PolNode, HashableNode), String> {
         // grabs nieces until it hits 1 above bottom. The nodes returned
         // here are from row 1, not row 0
-        fn grab_niece(mut p_node: PolNode, mut p_node_sib: PolNode, branch_len: u8, bits: u64) -> Option<(PolNode, PolNode, u8)> {
-
-            // calculate the left root. 0 means left_niece, 1 means right_niece
-            let lr = bits>>branch_len & 1;
-
-            // 0 is the left, 1 is the right as
-            if lr == 0 {
-                match &mut p_node.l_niece {
-                    None => return None,
-                    Some(niece) => {
-                        p_node = *niece.clone()
-                    }
-                }
-
-                match &mut p_node.r_niece {
-                    None => return None,
-                    Some(niece) => {
-                        p_node_sib = *niece.clone()
-                    }
-                }
-            } else {
-                match &mut p_node.r_niece {
-                    None => return None,
-                    Some(niece) => {
-                        p_node = *niece.clone()
-                    }
-                }
-
-                match &mut p_node.l_niece {
-                    None => return None,
-                    Some(niece) => {
-                        p_node_sib = *niece.clone()
-                    }
-                }
-            }
-
-            // Check if next recurse is gonna be at the bottom
-            // Recurse as long as we're not at bottom
-            if branch_len >= 1 {
-                grab_niece(p_node.clone(), p_node_sib.clone(), branch_len-1, bits);
-            }
-
-            return Some((p_node, p_node_sib, branch_len));
-        }
 
         // Grab the tree that the position is at
         let (tree, branch_len, bits) = util::detect_offset(pos, self.num_leaves)?;
-
-        match &self.roots {
-            None => {
-                return Err("grab_pos called on an empty pollard".to_string());
-            },
-            Some(root) => {
-                if tree as usize >= root.len() {
-                    return Err("Pos asked for out of bounds for the current pollard".to_string());
-                }
-
-                let node = root[tree as usize].clone();
-                let node_sib = root[tree as usize].clone();
-
-                match grab_niece(node, node_sib, branch_len, bits) {
-                    None => {
-                        return Err("Pos asked for out of bounds for the current pollard".to_string());
-                    },
-                    Some((mut p_node, mut p_node_sib, branch_len)) => {
-                        let hnode = HashableNode {
-                            dest: Some(Box::new(p_node_sib.clone() )),
-                            sib: Some(Box::new(p_node.clone() )),
-                            position: pos
-                        };
-
-                        //let lr = bits>>branch_len & 1;
-                        //let lr_sib = lr ^ 1;
-
-                        // 0 is the left, 1 is the right as
-                        //if lr_sib == 0 {
-                        //    match &mut p_node.l_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node = *niece.clone()
-                        //        }
-                        //    }
-
-                        //    match &mut p_node.r_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node_sib = *niece.clone()
-                        //        }
-                        //    }
-                        //} else {
-                        //    match &mut p_node.r_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node = *niece.clone()
-                        //        }
-                        //    }
-
-                        //    match &mut p_node.l_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node_sib = *niece.clone()
-                        //        }
-                        //    }
-                        //}
-
-                        return Ok((p_node, p_node_sib, hnode));
-                    }
-                }
-            }
+        
+        if tree as usize >= self.roots.len() {
+            return Err(String::from("Pos asked for out of bounds for the current pollard"));
         }
+
+        let node = self.roots[tree as usize].clone();
+
+        let (node, node_sib, branch_len) = Pollard::grab_niece(&Box::from(node), branch_len, bits)?;
+        
+        let h_node = HashableNode {
+            dest: Some(Box::new(node_sib.clone())),
+            sib: Some(Box::new(node.clone())),
+            position: pos
+        };
+
+        Ok((node, node_sib, h_node))
     }
 
-    // fn grab_pos(&self, pos: u64) -> Result<(PolNode, PolNode, HashableNode), String> {
-    //     // grabs nieces until it hits 1 above bottom. The nodes returned
-    //     // here are from row 1, not row 0
-    //     if self.roots.len() == 0 as usize {
-    //         return Err(String::from("Asking for position in a empty Pollard"));
-    //     }
-
-    //     // Grab the tree that the position is at
-    //     let (tree, branch_len, bits)  = util::detect_offset(pos, self.num_leaves)?;
-    //     Pollard::grab_niece(node, node_sib, branch_len, bits);
-
-    //     return Ok((p_node, p_node_sib, hnode));
-    // }
 }
-/*match &self.roots {
-            None => {
-                return Err("grab_pos called on an empty pollard".to_string());
-            },
-            Some(root) => {
-                if tree as usize >= root.len() {
-                    return Err("Pos asked for out of bounds for the current pollard".to_string());
-                }
 
-                let node = root[tree as usize].clone();
-                let node_sib = root[tree as usize].clone();
-
-                match grab_niece(node, node_sib, branch_len, bits) {
-                    None => {
-                        return Err("Pos asked for out of bounds for the current pollard".to_string());
-                    },
-                    Some((mut p_node, mut p_node_sib, branch_len)) => {
-                        let hnode = HashableNode {
-                            dest: Some(Box::new(p_node_sib.clone() )),
-                            sib: Some(Box::new(p_node.clone() )),
-                            position: pos
-                        };
-
-                        //let lr = bits>>branch_len & 1;
-                        //let lr_sib = lr ^ 1;
-
-                        // 0 is the left, 1 is the right as
-                        //if lr_sib == 0 {
-                        //    match &mut p_node.l_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node = *niece.clone()
-                        //        }
-                        //    }
-
-                        //    match &mut p_node.r_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node_sib = *niece.clone()
-                        //        }
-                        //    }
-                        //} else {
-                        //    match &mut p_node.r_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node = *niece.clone()
-                        //        }
-                        //    }
-
-                        //    match &mut p_node.l_niece {
-                        //        None => (),
-                        //        Some(niece) => {
-                        //            p_node_sib = *niece.clone()
-                        //        }
-                        //    }
-                        //}
-
-                        return Ok((p_node, p_node_sib, hnode));
-                    }
-                }
-            }
-        }*/
 /// PolNode represents a node in the utreexo pollard tree. It points
 /// to its nieces
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct PolNode {
     // The hash
     pub data: sha256::Hash,
@@ -398,54 +254,6 @@ fn pol_swap<'a, 'b>(mut a: &'a mut PolNode, mut asib: &'b mut PolNode, mut b: &'
 
 #[cfg(test)]
 mod tests {
-    fn pollard_add_five() {
-        use bitcoin::hashes::{sha256, Hash, HashEngine};
-        use super::types;
-
-        let mut pollard = super::Pollard::new();
-
-        for i in 1..5 {
-            // boilerplate hashgen
-            // TODO maybe there's a better way?
-            let mut engine = bitcoin::hashes::sha256::Hash::engine();
-            let num: &[u8; 1] = &[i as u8];
-            engine.input(num);
-            let h = sha256::Hash::from_engine(engine);
-            let leaf = types::Leaf{hash: h, remember: false};
-
-            // add one leaf
-            &pollard.modify(vec![leaf], vec![]);
-
-            match i {
-                1 => {
-                    check_count(pollard.num_leaves, pollard.roots.clone().unwrap().len());
-                    assert_eq!(pollard.roots.clone().unwrap()[0].data, h);
-                }
-
-                2 => {
-                    check_count(pollard.num_leaves, pollard.roots.clone().unwrap().len());
-                    assert_ne!(pollard.roots.clone().unwrap()[0].data, h);
-                }
-
-                3 => {
-                    check_count(pollard.num_leaves, pollard.roots.clone().unwrap().len());
-                    assert_eq!(pollard.roots.clone().unwrap()[1].data, h);
-                }
-
-                4 => {
-                    check_count(pollard.num_leaves, pollard.roots.clone().unwrap().len());
-                    assert_ne!(pollard.roots.clone().unwrap()[0].data, h);
-                }
-
-                5 => {
-                    check_count(pollard.num_leaves, pollard.roots.clone().unwrap().len());
-                    assert_eq!(pollard.roots.clone().unwrap()[1].data, h);
-                }
-
-                _ => ()
-            }
-        }
-    }
 
     // A Utreexo tree will always have a collection of trees that are a perfect power
     // of two. The popcount of leaves should always equal the length of the root
@@ -513,15 +321,16 @@ mod tests {
 
         let mut pol = super::Pollard::new();
 
-        for i in 0..500000 {
+        for i in 0..3 {
             let mut engine = bitcoin::hashes::sha256::Hash::engine();
             engine.input(&[(i % 255) as u8]);
             let h = sha256::Hash::from_engine(engine);
             let leaf = types::Leaf{hash: h, remember: false};
             pol.modify(vec![leaf], vec![]);
         }
+        println!("{:#?}", pol);
         // After an execution, check the number of Pollard's roots
-        check_count(pol.num_leaves, pol.roots.as_ref().unwrap().len());
+        //check_count(pol.num_leaves, pol.roots.as_ref().unwrap().len());
     }
 
     #[test]
