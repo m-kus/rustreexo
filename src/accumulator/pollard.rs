@@ -116,73 +116,43 @@ impl Pollard {
             return Ok(self.num_leaves as usize);
         }
 
-        let pollard_rows = util::tree_rows(self.num_leaves);
-
         let leaves_after_del = self.num_leaves - dels.len() as u64;
 
         for i in dels.iter() {
             let (tree, node, bits) = util::detect_offset(*i, self.num_leaves).unwrap();
-            let mut node = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?.to_owned();
-            node.l_niece = None;
-            node.r_niece = None;
+            let n = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?;
+            if bits & 1 == 0 {
+                n.l_niece = None;
+            } else {
+                n.r_niece = None;
+            }
         }
-
+        self.num_leaves = leaves_after_del;
         Ok(leaves_after_del as usize)
     }
-    fn get_node(node: &PolNode, branch_len: u8, bits: u64) -> Result <&PolNode, String>{
-        let mut len = branch_len;
-        let mut node = node;
-        while len >= 1 {
-            let lr = bits << len & 1;
+    fn get_node(node: &mut PolNode, branch_len: u8, bits: u64) -> Result <&mut PolNode, String>{
+        let mut len = branch_len - 1;
+        if branch_len == 1 {
+            return Ok(node);
+        }
+
+        let mut node = if (bits >> len) & 1 == 0 {
+            node.l_niece.as_mut().unwrap()
+        } else {
+            node.r_niece.as_mut().unwrap()
+        };
+        while len > 1 {
+            let lr = (bits >> branch_len) & 1;
             if lr == 0 {
-                if let Some(r_niece) = &node.r_niece {
-                    node = r_niece.as_ref();
-                }
+                node = node.l_niece.as_mut().unwrap();
             } else {
-                if let Some(l_niece) = &node.l_niece {
-                    node = l_niece.as_ref();
-                }
+                node = node.r_niece.as_mut().unwrap();
             }
             len -= 1;
         }
         Ok(node)
     }
 
-    fn get_new_tree(node: &mut PolNode) {
-        if node.l_niece.is_some() {
-            //aunt thing
-            //node.l_niece = None;
-        }
-        node.l_niece = None;
-        
-        if node.r_niece.is_some() {
-            //aunt thing
-            //node.l_niece = None;
-        }
-        node.r_niece = None;
-    }
-    // fn remove_one(tree: PolNode, bits:u64, branch_len: u8) -> Result<u8, String> {
-
-    //     let mut len = branch_len;
-
-    //     while len >= 1 {
-    //         let lr = bits << len & 1;
-    //         if lr == 0 {
-    //             if let Some(r_niece) = node.r_niece {
-    //                 node = *r_niece;
-    //             }
-    //         } else {
-    //             if let Some(l_niece) = node.l_niece {
-    //                 node = *l_niece;
-    //             }
-    //         }
-    //         len -= 1;
-    //     }
-    //     self.roots[tree as usize] = node;
-    
-        
-    //     Ok(0)
-    // }
 
 }
 
@@ -313,8 +283,8 @@ mod tests {
     //     }
 
 
-    //pol.modify(vec![], vec![0]);
-    //}
+    // pol.modify(vec![], vec![0]);
+    // }
 
     #[test]
     fn test_pol_add() {
@@ -323,85 +293,16 @@ mod tests {
 
         let mut pol = super::Pollard::new();
 
-        for i in 0..4 {
+        for i in 0..6 {
             let mut engine = bitcoin::hashes::sha256::Hash::engine();
             engine.input(&[(i % 255) as u8]);
             let h = sha256::Hash::from_engine(engine);
             let leaf = types::Leaf{hash: h, remember: false};
             pol.modify(vec![leaf], vec![]);
         }
-        println!("{:#?}", pol);
-        pol.remove(vec![0]);
-        println!("{:#?}", pol);
+        assert!(pol.num_leaves == 6);
 
         // After an execution, check the number of Pollard's roots
-        //check_count(pol.num_leaves, pol.roots.as_ref().unwrap().len());
-    }
-
-    #[test]
-    fn test_pol_swap() {
-        use bitcoin::hashes::{sha256, Hash, HashEngine};
-        use std::mem;
-
-        let mut engine = bitcoin::hashes::sha256::Hash::engine();
-        let num: &[u8; 1] = &[1 as u8];
-        engine.input(num);
-        let h1 = sha256::Hash::from_engine(engine);
-        let h1_copy = h1.clone();
-
-        let mut engine1 = bitcoin::hashes::sha256::Hash::engine();
-        let num2: &[u8; 1] = &[2 as u8];
-        engine1.input(num2);
-        let h2 = sha256::Hash::from_engine(engine1);
-        let h2_copy = h2.clone();
-
-        let mut engine2 = bitcoin::hashes::sha256::Hash::engine();
-        let num3: &[u8; 1] = &[3 as u8];
-        engine2.input(num3);
-        let h3 = sha256::Hash::from_engine(engine2);
-        let h3_copy = h3.clone();
-
-        let mut engine3 = bitcoin::hashes::sha256::Hash::engine();
-        let num4: &[u8; 1] = &[3 as u8];
-        engine3.input(num4);
-        let h4 = sha256::Hash::from_engine(engine3);
-        let h4_copy = h4.clone();
-
-        //let mut a = super::PolNode{
-        //    data: h1,
-        //    nieces: [None, None],
-        //};
-
-        //assert_eq!(a.data, h1_copy); // sanity
-
-        //let mut b = super::PolNode{
-        //    data: h2,
-        //    nieces: [None, None],
-        //};
-
-        //assert_eq!(b.data, h2_copy); // sanity
-
-        //let mut asib = super::PolNode{
-        //    data: h3,
-        //    nieces: [None, None],
-        //};
-
-        //let mut bsib = super::PolNode{
-        //    data: h4,
-        //    nieces: [None, None],
-        //};
-
-        //super::pol_swap(&mut a, &mut b, &mut asib, &mut bsib);
-
-        //assert_eq!(a.data, h1_copy);
-        //assert_eq!(b.data, h2_copy);
-
-        //assert_eq!(asib.data, h3_copy);
-        //assert_eq!(bsib.data, h4_copy);
-
-        //mem::swap(&mut a, &mut b);
-
-        //assert_eq!(a.data, h2_copy);
-        //assert_eq!(b.data, h1_copy);
+        check_count(pol.num_leaves, pol.roots.len());
     }
 }

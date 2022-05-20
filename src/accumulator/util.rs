@@ -119,7 +119,6 @@ pub fn detect_offset(pos: u64, num_leaves: u64) -> Result <(u8, u8, u64), String
         }
         tr -= 1;
     }
-
     assert!(tr >= nr);
 
     Ok((bigger_trees, tr - nr, !marker))
