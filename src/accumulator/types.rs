@@ -21,6 +21,7 @@ pub struct Leaf {
 /// LeafData is all the data that goes into the hashing the leaf.
 /// The data included is needed for transaction script validation.
 /// The rest of the data is for hardening against hash collisions.
+#[allow(unused)]
 pub struct LeafData {
     block_header: HASH,
     outpoint: transaction::OutPoint,

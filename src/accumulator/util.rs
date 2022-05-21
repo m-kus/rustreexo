@@ -68,8 +68,9 @@ pub fn detect_row(pos: u64, forest_rows: u8) -> u8 {
 //
 // 8 = getRowOffset(1, 3)
 // 12 = getRowOffset(2, 3)
+#[allow(dead_code)]
 fn row_offset(row: u8, forest_rows: u8) -> u64 {
-    // 2 << forestRows is 2 more than the max poisition
+    // 2 << forestRows is 2 more than the max position
     // to get the correct offset for a given row,
     // subtract (2 << `row complement of forestRows`) from (2 << forestRows)
     (2 << forest_rows) - (2 << (forest_rows - row))
@@ -114,9 +115,6 @@ pub fn detect_offset(pos: u64, num_leaves: u64) -> Result <(u8, u8, u64), String
             marker -= tree_size;
             bigger_trees += 1;
         }
-        if tr < 0 {
-            return Err(String::from("Error"));
-        }
         tr -= 1;
     }
     assert!(tr >= nr);
@@ -125,7 +123,7 @@ pub fn detect_offset(pos: u64, num_leaves: u64) -> Result <(u8, u8, u64), String
 }
 
 // child gives you the left child (LSB will be 0)
-fn child(pos: u64, forest_rows: u8) -> u64 {
+fn _child(pos: u64, forest_rows: u8) -> u64 {
     let mask = (2 << forest_rows) - 1;
     (pos << 1) & mask
 }
@@ -133,7 +131,7 @@ fn child(pos: u64, forest_rows: u8) -> u64 {
 // n_grandchild returns the positions of the left grandchild (LSB will be 0)
 // the generations to go will be determined by drop
 // ex: drop = 3 will return a great-grandchild
-fn n_grandchild(pos: u64, drop: u8, forest_rows: u8) -> Result<u64, u8> {
+fn _n_grandchild(pos: u64, drop: u8, forest_rows: u8) -> Result<u64, u8> {
     if drop == 0 {
         return Ok(pos);
     }
@@ -167,7 +165,7 @@ pub fn n_grandparent(pos: u64, rise: u8, forest_rows: u8) -> Result<u64, u8> {
 // you just xor with 2.  Actually there's no point in calling this function but
 // it's here to document it.  If you're the left sibling it returns the left
 // cousin.
-fn cousin(pos: u64) -> u64 {
+fn _cousin(pos: u64) -> u64 {
     pos ^ 2
 }
 
@@ -217,7 +215,7 @@ pub fn tree_rows(n: u64) -> u8 {
 // num_roots returns all the roots present in the Utreexo forest/pollard
 // Since the roots can only be a power of two, a popcount on the given
 // number of leaves is used
-fn num_roots(num_leaves: u64) -> u8 {
+fn _num_roots(num_leaves: u64) -> u8 {
     (num_leaves.count_ones()) as u8
 }
 
@@ -232,22 +230,9 @@ pub fn root_position(num_leaves: u64, row: u8, forest_rows: u8) -> u64 {
 
 }
 
-// get_roots_reverse gives you the positions of the tree roots, given a number of leaves.
-fn get_roots_reverse(num_leaves: u64, forest_rows: u8) {
-    //let pos: u64;
-
-    //for
-}
-
-fn subtree_positions() {}
-
-fn subtree_leafrange() {}
-
-fn to_leaves() {}
-
 // previous_pow2 returns the previous power of 2
 // ex: n = 9 will return 8. n = 33 will return 32
-fn previous_pow2(n: u64) -> u64 {
+fn _previous_pow2(n: u64) -> u64 {
     let mut x = n | (n >> 1);
     x = x | (x >> 2);
     x = x | (x >> 4);
@@ -271,7 +256,6 @@ fn next_pow2(n: u64) -> u64 {
 }
 
 #[cfg(test)]
-use std::{println as info, println as warn};
 mod tests {
     #[test]
     fn test_root_position() {

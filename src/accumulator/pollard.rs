@@ -1,15 +1,13 @@
 // Rustreexo
 
-use std::{collections::HashMap, task::Poll};
 use std::mem;
 
 use super::{
     types,
     util,
-    transform
 };
 
-use bitcoin::hashes::{sha256, Hash, HashEngine};
+use bitcoin::hashes::{sha256};
 
 /// Pollard is the sparse representation of the utreexo forest
 /// It is a collection of multitude of trees with leaves that are
@@ -39,15 +37,16 @@ impl Pollard {
 
     /// Modify changes the Utreexo tree state given the utxos and stxos
     /// stxos are denoted by their value
-    pub fn modify(&mut self, utxos: Vec<types::Leaf>, stxos: Vec<u64>) {
+    pub fn modify(&mut self, utxos: Vec<types::Leaf>, stxos: Vec<u64>) -> Result<u64, String>{
         // Order matters here. Adding then removing will result in a different
         // tree vs deleting then adding. For ease of use, only modify is visible
         // for external crates. This is consensus critical.
-        Pollard::remove(self, stxos);
-        Pollard::add(self, utxos);
+        Pollard::remove(self, stxos)?;
+        Pollard::add(self, utxos)?;
+        Ok(self.num_leaves)
     }
 
-    pub fn add(&mut self, adds: Vec<types::Leaf>) {
+    pub fn add(&mut self, adds: Vec<types::Leaf>) -> Result<u64, String> {
         // General algo goes:
         // 1 make a new node & assign data (no nieces; at bottom)
         // 2 if this node is on a row where there's already a root,
@@ -61,6 +60,7 @@ impl Pollard {
             //}
             Pollard::add_single(self, add.hash, false);
         }
+        Ok(self.num_leaves)
     }
     // recurse from the right side of the tree until we hit a tree with no root
     // Destroys roots along the way
@@ -92,7 +92,7 @@ impl Pollard {
     // AddSingle adds a single given utxo to the tree
     // TODO activate caching (use remember). This isn't done in the
     // Go repo either yet
-    fn add_single(&mut self, utxo: sha256::Hash, remember: bool) {
+    fn add_single(&mut self, utxo: sha256::Hash, _remember: bool) {
         // init node. If the Pollard is perfect (meaning only one root), this will become a
         // new root
         let node = PolNode {
@@ -120,11 +120,13 @@ impl Pollard {
 
         for i in dels.iter() {
             let (tree, node, bits) = util::detect_offset(*i, self.num_leaves).unwrap();
-            let n = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?;
+            //Get the node's aunt
+            let aunt = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?;
+            //If 0, then we are removing the left niece
             if bits & 1 == 0 {
-                n.l_niece = None;
+                aunt.l_niece = None;
             } else {
-                n.r_niece = None;
+                aunt.r_niece = None;
             }
         }
         self.num_leaves = leaves_after_del;
@@ -135,22 +137,31 @@ impl Pollard {
         if branch_len == 1 {
             return Ok(node);
         }
-
+        
         let mut node = if (bits >> len) & 1 == 0 {
-            node.l_niece.as_mut().unwrap()
+            node.l_niece.as_mut()
         } else {
-            node.r_niece.as_mut().unwrap()
+            node.r_niece.as_mut()
         };
+
         while len > 1 {
             let lr = (bits >> branch_len) & 1;
             if lr == 0 {
-                node = node.l_niece.as_mut().unwrap();
+                if let Some(i) = node {
+                    node = i.l_niece.as_mut();                    
+                }
             } else {
-                node = node.r_niece.as_mut().unwrap();
+                if let Some(i) = node {
+                    node = i.r_niece.as_mut();                    
+                }
             }
             len -= 1;
         }
-        Ok(node)
+        if let Some(i) = node {
+            Ok(i)
+        } else {
+            Err(String::from("Node not found"))
+        }
     }
 
 
@@ -166,7 +177,7 @@ pub struct PolNode {
     pub l_niece: Option<Box<PolNode>>,
     pub r_niece: Option<Box<PolNode>>,
 }
-
+#[allow(dead_code)]
 impl PolNode {
     /// aunt_op returns the hash of a nodes' nieces. Errors if called on nieces
     /// that are nil.
@@ -182,6 +193,7 @@ impl PolNode {
         self.l_niece = None;
         self.r_niece = None;
     }
+
     fn new(data: sha256::Hash, l_niece: Option<Box<PolNode>>, r_niece: Option<Box<PolNode>>) -> PolNode {
         PolNode {
             data,
@@ -211,21 +223,18 @@ impl PolNode {
     }
 }
 
-// hashableNode is the data needed to perform a hash
+/// hashableNode is a node with all data that it's needed for hashing
 pub struct HashableNode {
     pub sib: Option<Box<PolNode>>,
     pub dest: Option<Box<PolNode>>,
     pub position: u64 // doesn't really need to be there, but convenient for debugging
 }
 
-// polSwap swaps the contents of two polNodes & leaves pointers
-fn pol_swap<'a, 'b>(mut a: &'a mut PolNode, mut asib: &'b mut PolNode, mut b: &'a mut PolNode, mut bsib: &'b mut PolNode) {
-    mem::swap(&mut a, &mut b);
-    mem::swap(&mut asib,&mut bsib);
-}
-
 #[cfg(test)]
 mod tests {
+    use core::panic;
+    use std::vec;
+
 
     // A Utreexo tree will always have a collection of trees that are a perfect power
     // of two. The popcount of leaves should always equal the length of the root
@@ -233,58 +242,34 @@ mod tests {
         let root_count = num_leaves.count_ones() as usize;
         assert_eq!(root_count, root_len);
     }
+    #[test]
+    fn test_pol_del() {
+        use bitcoin::hashes::{sha256, Hash, HashEngine};
+        use super::types;
 
-    fn check_root() {
+        let mut pol = super::Pollard::new();
+
+        for i in 0..500 {
+            let mut engine = bitcoin::hashes::sha256::Hash::engine();
+            engine.input(&[i as u8]);
+            let h = sha256::Hash::from_engine(engine);
+            println!("for i {}: {:?}", i, &h);
+            let leaf = types::Leaf{hash: h, remember: false};
+
+            // add one leaf
+            if let Err(what) = pol.modify(vec![leaf], vec![]) {
+                println!("{}", what);
+                panic!();
+            };
+        }
+        let v: Vec<_> = (400u64..500).map(u64::from).collect();
+        if let Err(what) = pol.modify(vec![], v) {
+            println!("{}", what);
+            panic!();
+        }
+        println!("{:#?}",  pol.roots[pol.roots.len() - 1]);
+        
     }
-    // #[test]
-    // fn test_pol_del() {
-    //     use bitcoin::hashes::{sha256, Hash, HashEngine};
-    //     use super::types;
-
-    //     let mut pol = super::Pollard::new();
-
-    //     for i in 0..5 {
-    //         // boilerplate hashgen
-    //         // TODO maybe there's a better way?
-    //         let mut engine = bitcoin::hashes::sha256::Hash::engine();
-    //         let num: &[u8; 1] = &[i as u8];
-    //         engine.input(num);
-    //         let h = sha256::Hash::from_engine(engine);
-    //         println!("for i {}: {:?}", i, &h);
-    //         let leaf = types::Leaf{hash: h, remember: false};
-
-    //         // add one leaf
-    //         pol.modify(vec![leaf], vec![]);
-    //     }
-
-    //     for i in 0..4 {
-    //         let node = pol.grab_pos(i);
-    //         match node {
-    //             Err(e) => (panic!("no pollard node found")),
-    //             Ok((node, node_sib, hn)) => {
-    //                 let mut engine = bitcoin::hashes::sha256::Hash::engine();
-    //                 let num: &[u8; 1] = &[i as u8];
-    //                 engine.input(num);
-    //                 let h = sha256::Hash::from_engine(engine);
-
-    //                 println!("fetched node hash {}: {:?}", i, &node.l_niece.unwrap().data);
-    //                 println!("fetched node_sib hash: {:?}", &node_sib.data);
-    //                 println!("calculated 0 hash: {:?}", h);
-    //             }
-    //         }
-    //     }
-    //     let node = pol.grab_pos(14);
-
-    //     match node {
-    //         Err(e) => (panic!("no pollard node found")),
-    //         Ok((node, node_sib, hn)) => {
-    //             println!("fetched node hash {}: {:?}", 8, &node.l_niece.unwrap().data);
-    //         }
-    //     }
-
-
-    // pol.modify(vec![], vec![0]);
-    // }
 
     #[test]
     fn test_pol_add() {
@@ -298,7 +283,11 @@ mod tests {
             engine.input(&[(i % 255) as u8]);
             let h = sha256::Hash::from_engine(engine);
             let leaf = types::Leaf{hash: h, remember: false};
-            pol.modify(vec![leaf], vec![]);
+            
+            if let Err(what) = pol.modify(vec![leaf], vec![]) {
+                println!("{}", what);
+                panic!();
+            }
         }
         assert!(pol.num_leaves == 6);
 
