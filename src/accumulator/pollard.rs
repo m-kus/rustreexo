@@ -1,6 +1,6 @@
 // Rustreexo
 
-use std::mem;
+use std::{mem, fmt::Debug};
 
 use super::{
     types,
@@ -78,11 +78,9 @@ impl Pollard {
                 
             let new_node = PolNode::new (
                                                 n_hash,
-                                            Some(Box::new(left_root.clone())),
-                                            Some(Box::new(node.clone()))
+                                            Some(Box::new(left_root)),
+                                            Some(Box::new(node))
                                                 );
-            left_root.aunt = Some(Box::from(new_node.clone()));
-            node.aunt = Some(Box::from(new_node.clone()));
 
             return Pollard::create_root(pol, new_node, num_leaves >> 1);
         }
@@ -97,7 +95,6 @@ impl Pollard {
         // new root
         let node = PolNode {
             data: utxo,
-            aunt: None,
             l_niece: None,
             r_niece: None,
         };
@@ -109,7 +106,9 @@ impl Pollard {
         // increment leaf count
         self.num_leaves += 1;
     }
-
+    // Removes a set of UTXOS, given its position in the tree. If two siblings are deleted,
+    // then we delete their aunt, if aut is a root, we keep the root, but nil out both siblings
+    // and root's data.
     fn remove(&mut self, dels: Vec<u64>) -> Result <usize, String> {
         // if there is nothing to delete, return
         if dels.len() == 0 {
@@ -117,26 +116,68 @@ impl Pollard {
         }
 
         let leaves_after_del = self.num_leaves - dels.len() as u64;
-
+        
+        let mut dels = dels.to_owned();
+        dels.sort();
+        let dels = util::extract_twins(dels, util::tree_rows(self.num_leaves));
+        println!("{:?}", dels);
         for i in dels.iter() {
+
             let (tree, node, bits) = util::detect_offset(*i, self.num_leaves).unwrap();
-            //Get the node's aunt
-            let aunt = Pollard::get_node(&mut self.roots[tree as usize], node, bits)?;
-            //If 0, then we are removing the left niece
-            if bits & 1 == 0 {
-                aunt.l_niece = None;
+
+            // is that a root?
+            if node == 0 {
+                self.roots[tree as usize].l_niece = None;
+                self.roots[tree as usize].r_niece = None;
+                self.roots[tree as usize].data = bitcoin_hashes::Hash::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+            
             } else {
-                aunt.r_niece = None;
+                //Get the node's aunt
+                let aunt = Pollard::get_node_aunt(&mut self.roots[tree as usize], node, bits);
+                
+                if let Some(i) = aunt {
+                    //If 0, then we are removing the left niece
+                    if bits & 1 == 0 {
+                        // If I'm removing a left niece, then the right niece gets promoted
+                        // to it's aunt position
+                        if let Some(r_niece) = &i.r_niece {
+                            *i = r_niece.clone();
+                        }                     
+                    } else {
+                        if let Some(l_niece) = &i.l_niece {
+                            *i = l_niece.clone();
+                        } 
+                    }
+                } else {
+                    let node = &mut self.roots[tree as usize];
+                    //If 0, then we are removing the left niece
+                    if bits & 1 == 0 {
+                        // If I'm removing a left niece, then the right niece gets promoted
+                        // to it's aunt position
+                        if let Some(r_niece) = &node.r_niece {
+                            *node = *r_niece.clone();
+                        }                     
+                    } else {
+                        if let Some(l_niece) = &node.l_niece {
+                            *node = *l_niece.clone();
+                        } 
+                    }                       
+                }
+
             }
         }
-        self.num_leaves = leaves_after_del;
+
+        
         Ok(leaves_after_del as usize)
     }
-    fn get_node(node: &mut PolNode, branch_len: u8, bits: u64) -> Result <&mut PolNode, String>{
-        let mut len = branch_len - 1;
+
+    // Get the aunt of a given node. If this node is a root, error if not found
+    fn get_node_aunt(node: &mut PolNode, branch_len: u8, bits: u64) -> Option<&mut Box<PolNode>> {
         if branch_len == 1 {
-            return Ok(node);
+            return None;
         }
+
+        let mut len = branch_len - 1;
         
         let mut node = if (bits >> len) & 1 == 0 {
             node.l_niece.as_mut()
@@ -146,25 +187,20 @@ impl Pollard {
 
         while len > 1 {
             let lr = (bits >> branch_len) & 1;
-            if lr == 0 {
-                if let Some(i) = node {
+            
+            if let Some(i) = node {
+                if lr == 0 {
                     node = i.l_niece.as_mut();                    
-                }
-            } else {
-                if let Some(i) = node {
+                } else {
                     node = i.r_niece.as_mut();                    
                 }
             }
+            
             len -= 1;
         }
-        if let Some(i) = node {
-            Ok(i)
-        } else {
-            Err(String::from("Node not found"))
-        }
+
+        node
     }
-
-
 }
 
 /// PolNode represents a node in the utreexo pollard tree. It points
@@ -172,10 +208,9 @@ impl Pollard {
 #[derive(Clone, Default, Debug)]
 pub struct PolNode {
     // The hash
-    pub data: sha256::Hash,
-    pub aunt: Option<Box<PolNode>>,
-    pub l_niece: Option<Box<PolNode>>,
-    pub r_niece: Option<Box<PolNode>>,
+    data: sha256::Hash,
+    l_niece: Option<Box<PolNode>>,
+    r_niece: Option<Box<PolNode>>,
 }
 #[allow(dead_code)]
 impl PolNode {
@@ -184,24 +219,24 @@ impl PolNode {
     fn aunt_op(&self) -> sha256::Hash {
         types::parent_hash(&self.l_niece.as_ref().unwrap().data, &self.r_niece.as_ref().unwrap().data)
     }
-
+    /// Is this node a leaf?
     fn dead_end(&self) -> bool {
         self.l_niece.is_none() && self.r_niece.is_none()
     }
-
+    /// Chop removes both nieces from a node, effectively deleting subtrees
     fn chop(&mut self) {
         self.l_niece = None;
         self.r_niece = None;
     }
-
+    /// Return a new node with provided data. nieces may be None.
     fn new(data: sha256::Hash, l_niece: Option<Box<PolNode>>, r_niece: Option<Box<PolNode>>) -> PolNode {
         PolNode {
             data,
-            aunt: None,
             l_niece,
             r_niece
         }
     }
+    /// Prune a node by removing all its subtrees.
     fn prune(&mut self) {
         match &mut self.l_niece {
             None => (),
@@ -235,6 +270,7 @@ mod tests {
     use core::panic;
     use std::vec;
 
+    use crate::accumulator::util;
 
     // A Utreexo tree will always have a collection of trees that are a perfect power
     // of two. The popcount of leaves should always equal the length of the root
@@ -243,32 +279,42 @@ mod tests {
         assert_eq!(root_count, root_len);
     }
     #[test]
+    fn get_line_count() {
+        let (tree, depth, bits) = util::detect_offset(6, 4).unwrap();
+        println!("{} {} {}", tree, depth, bits);
+    }
+
+    #[test]
     fn test_pol_del() {
         use bitcoin::hashes::{sha256, Hash, HashEngine};
         use super::types;
 
         let mut pol = super::Pollard::new();
 
-        for i in 0..500 {
+        for i in 0..4 {
             let mut engine = bitcoin::hashes::sha256::Hash::engine();
             engine.input(&[i as u8]);
             let h = sha256::Hash::from_engine(engine);
-            println!("for i {}: {:?}", i, &h);
             let leaf = types::Leaf{hash: h, remember: false};
-
+            println!("{}", leaf.hash);
             // add one leaf
             if let Err(what) = pol.modify(vec![leaf], vec![]) {
                 println!("{}", what);
                 panic!();
             };
         }
-        let v: Vec<_> = (400u64..500).map(u64::from).collect();
+        let v: Vec<_> = Vec::from([0, 3]);
         if let Err(what) = pol.modify(vec![], v) {
             println!("{}", what);
             panic!();
         }
-        println!("{:#?}",  pol.roots[pol.roots.len() - 1]);
         
+        // let v: Vec<_> = Vec::from([500, 501, 502, 503, 504, 505, 506]);
+        // if let Err(what) = pol.modify(vec![], v) {
+        //     println!("{}", what);
+        //     panic!();
+        // }
+        println!("{:#?}", pol);
     }
 
     #[test]
