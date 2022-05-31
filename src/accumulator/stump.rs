@@ -24,7 +24,7 @@ impl Stump {
   ///   let mut s = Stump::new();
   ///   let utxos = vec![];
   ///   let stxos = vec![];
-  ///   s.modify(utxos, stxos);
+  ///   s.modify(&utxos, &stxos);
   /// ```
   pub fn modify(&mut self, utxos: &Vec<bitcoin_hashes::sha256::Hash>, _stxos: &Vec<bitcoin_hashes::sha256::Hash>) {
     //remove
