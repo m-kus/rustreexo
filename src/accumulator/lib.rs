@@ -5,5 +5,5 @@
 //        assert_eq!(2 + 2, 4);
 //    }
 //}
-
+pub mod proof;
 pub mod stump;
