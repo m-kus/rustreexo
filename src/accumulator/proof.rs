@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::accumulator::{stump::Stump, types, util};
 use bitcoin_hashes::sha256;
 
@@ -155,7 +157,10 @@ impl Proof {
     ) -> Result<(Vec<(u64, sha256::Hash)>, Vec<sha256::Hash>), String> {
         // Where all the root hashes that we've calculated will go to.
         let total_rows = util::tree_rows(stump.leafs);
-
+        let empty = sha256::Hash::from_str(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap();
         // Where all the parent hashes we've calculated in a given row will go to.
         let mut calculated_root_hashes =
             Vec::<sha256::Hash>::with_capacity(util::num_roots(stump.leafs) as usize);
@@ -198,9 +203,9 @@ impl Proof {
                         // If The sibling is null, we push the current node.
                         // If none of them is null, we compute the parent hash of both siblings
                         // and push this to the next target.
-                        if hash == sha256::Hash::default() {
+                        if hash == empty {
                             Proof::sorted_push(&mut nodes, (next_to_prove, *next_hash));
-                        } else if *next_hash == sha256::Hash::default() {
+                        } else if *next_hash == empty {
                             Proof::sorted_push(&mut nodes, (next_to_prove, hash));
                         } else {
                             let hash = types::parent_hash(&hash, &next_hash);
@@ -219,7 +224,7 @@ impl Proof {
 
                 // If the next node is not my sibling, the hash must be passed inside the proof
                 if let Some(next_proof_hash) = hashes_iter.next() {
-                    if hash != sha256::Hash::default() {
+                    if hash != empty {
                         let hash = if util::is_left_niece(pos) {
                             types::parent_hash(&hash, next_proof_hash)
                         } else {

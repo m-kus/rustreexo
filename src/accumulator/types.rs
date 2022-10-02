@@ -5,6 +5,7 @@ extern crate sha2;
 
 use sha2::{Digest, Sha512_256};
 
+
 // parent_hash return the merkle parent of the two passed in nodes
 pub fn parent_hash(left: &sha256::Hash, right: &sha256::Hash) -> sha256::Hash {
     let hash = Sha512_256::new()
