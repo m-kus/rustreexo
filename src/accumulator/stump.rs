@@ -233,7 +233,7 @@ mod test {
             new_del_hashes: Vec<String>,
             to_destroy: Vec<u64>,
         }
-        let contents = std::fs::read_to_string("test_values/cache_tests.json")
+        let contents = std::fs::read_to_string("test_values/update_data_tests.json")
             .expect("Something went wrong reading the file");
 
         let tests = serde_json::from_str::<Vec<TestData>>(contents.as_str())
