@@ -1,5 +1,5 @@
 use crate::accumulator::{stump::Stump, types, util};
-use bitcoin_hashes::sha256;
+use bitcoin_hashes::{sha256, Hash};
 
 use super::{stump::UpdateData, util::get_proof_positions};
 
@@ -25,7 +25,7 @@ pub struct Proof {
     /// would be [05] as you need 04 and 05 to hash to 06. 04 can be calculated
     /// by hashing 00 and 01.
     ///```!
-    /// // 06  
+    /// // 06
     /// // |-------\
     /// // 04      05
     /// // |---\   |---\
@@ -60,13 +60,13 @@ impl Proof {
     ///   use bitcoin_hashes::{sha256, Hash, HashEngine};
     ///   use rustreexo::accumulator::{proof::Proof};
     ///   let targets = vec![0];
-    ///   
+    ///
     ///   let mut proof_hashes = Vec::new();
     ///   let targets = vec![0];
     ///   // For proving 0, we need 01, 09 and 13's hashes. 00, 08, 12 and 14 can be calculated
     ///   //Fill `proof_hashes` up with all hashes
     ///   Proof::new(targets, proof_hashes);
-    /// ```  
+    /// ```
     pub fn new(targets: Vec<u64>, hashes: Vec<sha256::Hash>) -> Self {
         Proof {
             targets: targets,
@@ -86,7 +86,7 @@ impl Proof {
     ///   let test_values:Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7];
     ///   // Targets are nodes witch we intend to prove
     ///   let targets = vec![0];
-    ///   
+    ///
     ///   let mut proof_hashes = Vec::new();
     ///   // This tree will look like this
     ///   // 14
@@ -150,7 +150,7 @@ impl Proof {
     /// those targets are deleted. In this context null means [sha256::Hash::default].
     ///
     /// It's the caller's responsibility to null out the targets if desired by
-    /// passing a [Hash::default()](`bitcoin_hashes::sha256::Hash::default()`) instead of the actual hash.
+    /// passing a [Hash::default()](`bitcoin_hashes::sha256::Hash::all_zeros()`) instead of the actual hash.
     pub(crate) fn calculate_hashes(
         &self,
         del_hashes: &Vec<sha256::Hash>,
@@ -201,9 +201,9 @@ impl Proof {
                         // If The sibling is null, we push the current node.
                         // If none of them is null, we compute the parent hash of both siblings
                         // and push this to the next target.
-                        if hash == sha256::Hash::default() {
+                        if hash == sha256::Hash::all_zeros() {
                             Proof::sorted_push(&mut nodes, (next_to_prove, *next_hash));
-                        } else if *next_hash == sha256::Hash::default() {
+                        } else if *next_hash == sha256::Hash::all_zeros() {
                             Proof::sorted_push(&mut nodes, (next_to_prove, hash));
                         } else {
                             let hash = types::parent_hash(&hash, &next_hash);
@@ -222,7 +222,7 @@ impl Proof {
 
                 // If the next node is not my sibling, the hash must be passed inside the proof
                 if let Some(next_proof_hash) = hashes_iter.next() {
-                    if hash != sha256::Hash::default() {
+                    if hash != sha256::Hash::all_zeros() {
                         let hash = if util::is_left_niece(pos) {
                             types::parent_hash(&hash, next_proof_hash)
                         } else {
@@ -442,12 +442,12 @@ impl Proof {
                 if let Some((_, updated_hash)) =
                     updated.iter().find(|(updated_pos, _)| *pos == updated_pos)
                 {
-                    if *updated_hash != sha256::Hash::default() {
+                    if *updated_hash != sha256::Hash::all_zeros() {
                         new_proof.push((**pos, *updated_hash));
                     }
                 } else {
                     // If it didn't change, take the value from the old proof
-                    if **hash != sha256::Hash::default() {
+                    if **hash != sha256::Hash::all_zeros() {
                         new_proof.push((**pos, **hash));
                     }
                 }
@@ -463,7 +463,7 @@ impl Proof {
                 .iter()
                 .find(|(updated_pos, _)| missing == *updated_pos)
             {
-                if *hash != sha256::Hash::default() {
+                if *hash != sha256::Hash::all_zeros() {
                     new_proof.push((missing, *hash));
                 }
             }
@@ -505,7 +505,7 @@ impl Proof {
         let block_targets = util::detwin(block_targets.to_owned(), total_rows);
 
         for (position, hash) in old_positions {
-            if *hash == sha256::Hash::default() {
+            if *hash == sha256::Hash::all_zeros() {
                 continue;
             }
             let mut next_pos = *position;
