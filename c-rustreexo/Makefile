@@ -13,7 +13,7 @@ build-debug:
 	@cargo build
 
 examples: build-debug
-	@$(CC) -I $(PWD)/include/ -L $(PWD)/target/debug/ examples/simple_stump_example.c -l:LIB_FILE_NAME -o $(PWD)/examples/pollard
+	@$(CC) -I $(PWD)/include/ -L $(PWD)/target/debug/ examples/simple_stump_example.c -l:$(LIB_FILE_NAME) -o $(PWD)/examples/pollard
 
 install: build
 	sudo mkdir -p $(HEADERS_INSTALL_PATH)/$(LIB_NAME)/
