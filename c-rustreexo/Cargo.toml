@@ -1,0 +1,15 @@
+[package]
+name = "c-rustreexo"
+description = "C Bindings for rustreexo"
+version = "0.1.0"
+authors = ["Davidson Souza <davidson.lucas.souza@gmail.com>"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "c_rustreexo"
+crate-type = ["staticlib"]
+
+[dependencies]
+rustreexo = { path = "../" }
+bitcoin_hashes = "0.11"
