@@ -1,7 +1,7 @@
 use bitcoin_hashes::{sha256, Hash};
-use rustreexo::accumulator::proof::Proof;
+use rustreexo::accumulator::{proof::Proof, stump::Stump};
 
-use crate::{alloc_and_set, get_slice, CHash, Error, EXIT_SUCCESS};
+use crate::{alloc_and_set, get_safe_ty, get_slice, CHash, Error, EXIT_FAILURE, EXIT_SUCCESS};
 
 #[no_mangle]
 pub extern "C" fn rustreexo_proof_create(
@@ -26,4 +26,40 @@ pub extern "C" fn rustreexo_proof_create(
     propagate_error!(errno, result);
 
     EXIT_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn rustreexo_proof_verify(
+    errno: *mut Error,
+    del_hashes: *mut CHash,
+    n_dels: usize,
+    proof: *mut Proof,
+    stump: *mut Stump,
+) -> usize {
+    check_ptr!(errno);
+    check_ptr!(errno, proof);
+    check_ptr!(errno, stump);
+
+    let proof = get_safe_ty(proof);
+    let stump = get_safe_ty(stump);
+    let hashes = get_slice(del_hashes, n_dels);
+    let hashes = hashes
+        .iter()
+        .map(|hash| sha256::Hash::from_inner(**hash))
+        .collect::<Vec<_>>();
+
+    match proof.verify(&hashes, &stump) {
+        Ok(valid) => {
+            if valid {
+                return EXIT_SUCCESS;
+            }
+            unsafe {
+                *errno = Error::InvalidProof;
+            }
+        }
+        Err(_) => unsafe {
+            *errno = Error::UtreexoError;
+        },
+    }
+    return EXIT_FAILURE;
 }
