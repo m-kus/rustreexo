@@ -1,7 +1,7 @@
 OBJECT_INSTALL_PATH=/usr/local/lib/
 HEADERS_INSTALL_PATH=/usr/local/include/
 LIB_NAME=librustreexo
-LIB_FILE_NAME=libc_rustreexo.a
+LIB_FILE_NAME=libc_rustreexo.so
 CC=gcc
 
 all: build

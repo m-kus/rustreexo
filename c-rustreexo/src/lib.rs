@@ -29,6 +29,7 @@ pub enum Error {
     InvalidSlice = 2,
     UtreexoError = 3,
     AllocationError = 4,
+    InvalidProof = 5,
 }
 
 pub const EXIT_SUCCESS: usize = 1;
@@ -45,7 +46,7 @@ macro_rules! check_ptr {
             unsafe {
                 *$errno = Error::NullPointer;
             }
-            return EXIT_FAILURE;
+            return crate::EXIT_FAILURE;
         }
     };
     ($errno: ident,$ptr: ident, $count: ident) => {
@@ -72,6 +73,9 @@ fn get_safe_ty<T>(thing: *mut T) -> T {
     unsafe { thing.read() }
 }
 fn get_slice<'a, T>(slice: *mut T, length: usize) -> &'a [T] {
+    if length == 0 {
+        return &[];
+    }
     unsafe { std::slice::from_raw_parts(slice, length) }
 }
 fn alloc_and_set<T>(dst: *mut *mut T, new_value: T) -> Result<(), Error> {

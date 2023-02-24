@@ -1,4 +1,4 @@
-use crate::{get_safe_ty, CHash, Error, EXIT_FAILURE, EXIT_SUCCESS};
+use crate::{get_safe_ty, get_slice, CHash, Error, EXIT_FAILURE, EXIT_SUCCESS};
 use bitcoin_hashes::{sha256, Hash};
 use rustreexo::accumulator::{proof::Proof, stump::Stump};
 use std::alloc::{alloc, Layout};
@@ -16,22 +16,33 @@ pub extern "C" fn rustreexo_stump_modify(
     errno: *mut Error,
     stump: *mut Stump,
     utxos: *mut CHash,
-    n_hashes: usize,
+    utxos_len: usize,
+    del_hashes: *mut CHash,
+    del_hashes_len: usize,
+    proof: *mut Proof,
 ) -> usize {
     check_ptr!(errno);
     check_ptr!(errno, stump);
-    check_ptr!(errno, utxos, n_hashes);
+    check_ptr!(errno, utxos, utxos_len);
+    check_ptr!(errno, del_hashes, del_hashes_len);
+    check_ptr!(errno, proof);
 
     // Build a safe vector form a C array
-    let utxos = unsafe {
-        std::slice::from_raw_parts(utxos, n_hashes)
-            .iter()
-            .map(|slice| sha256::Hash::from_inner(**slice))
-            .collect()
-    };
+    let utxos = get_slice(utxos, utxos_len);
+    let utxos = utxos
+        .iter()
+        .map(|slice| sha256::Hash::from_inner(**slice))
+        .collect();
 
+    let del_hashes = get_slice(del_hashes, del_hashes_len);
+    let del_hashes = del_hashes
+        .iter()
+        .map(|hash| sha256::Hash::from_inner(**hash))
+        .collect::<Vec<_>>();
+
+    let proof = get_safe_ty(proof);
     let r_stump = get_safe_ty(stump);
-    let s = r_stump.modify(&utxos, &vec![], &Proof::default());
+    let s = r_stump.modify(&utxos, &del_hashes, &proof);
     if let Ok(s) = s {
         unsafe {
             stump.write(s.0);

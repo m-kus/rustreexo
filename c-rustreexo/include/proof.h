@@ -3,16 +3,13 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <stump.h>
-
-#include <rustreexo_hashes.h>
+#include <leaf.h>
 
 /**
  * A proof is a collection of hashes and targets, used to prove that a set of UTXOs
  * actually belongs to a accumulator set. Those proofs are very similar to Merkle proofs
  * used in Bitcoin.
  */
-
-typedef struct Proof Proof;
 
 #ifdef __cplusplus
 extern "C"
@@ -24,6 +21,7 @@ extern "C"
 * for UTXOs being spent.
 *
 * @param errno A pointer used to write back error, if any
+* @param proof The newly created proof
 * @param hashes An array of hashes
 * @param n_hashes The hashes array's length
 * @param targets  An array of targets
@@ -31,6 +29,7 @@ extern "C"
 */
 size_t rustreexo_proof_create(
     size_t *errno,
+    Proof **out,
     CHash *hashes,
     size_t n_hashes,
     uint64_t *targets,
@@ -51,6 +50,6 @@ size_t rustreexo_proof_verify(
 
 #ifdef __cplusplus
 }
-#endif //__cplusplus
+#endif // __cplusplus
 
 #endif // RUSTREEXO_PROOF_H

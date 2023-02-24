@@ -53,7 +53,16 @@ enum rustreexo_error
     UtreexoError = 3,
 } rustreexo_error;
 
-#include "rustreexo_hashes.h"
+/**
+ * Opaque data structure representing an Stump, the actual internals for this type are
+ * only implemented in Rust for the implementation itself. Consumers should hold a pointer
+ * to a Stump, and only modify it through the API.
+ */
+typedef struct Stump Stump;
+
+typedef struct Proof Proof;
+
+#include "leaf.h"
 #include "stump.h"
 
 /**
@@ -79,5 +88,4 @@ static inline const char *rustreexo_error_string(size_t errno)
         return "Invalid error number";
     }
 }
-
 #endif // RUSTREEXO_H
