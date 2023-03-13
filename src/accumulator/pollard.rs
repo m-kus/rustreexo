@@ -71,8 +71,9 @@
 //! a [Rc] over a node, not the [RefCell], so avoid using the [RefCell] directly.
 
 use super::{
+    proof::Proof,
     types::{self, parent_hash},
-    util::{self, is_left_niece, is_root_position, tree_rows},
+    util::{self, detwin, get_proof_positions, is_left_niece, is_root_position, tree_rows},
 };
 use bitcoin_hashes::{hex::ToHex, sha256::Hash};
 use std::{cell::Cell, fmt::Debug};
@@ -323,7 +324,7 @@ impl Pollard {
     /// and return a brand new [Pollard]. Taking ownership discourage people to use an old [Pollard]
     /// state instead of using the new one.
     ///
-    /// This method accepts two vectors as parameter, a vec of [Hash] and a vec of [u64]. The
+    /// This method accepts two vectors as parameter, a vec of [struct@Hash] and a vec of [u64]. The
     /// first one is a vec of leaf hashes for the newly created UTXOs. The second one is the position
     /// for the UTXOs being spent in this block as inputs.
     ///
@@ -357,10 +358,104 @@ impl Pollard {
             full,
         })
     }
+    /// Public interface for verifying proofs. Returns a result with a bool or an Error
+    /// True means the proof is true given the current stump, false means the proof is
+    /// not valid given the current stump.
+    ///# Examples
+    /// ```
+    ///   use bitcoin_hashes::{sha256::Hash as Sha256, Hash, HashEngine};
+    ///   use std::str::FromStr;
+    ///   use rustreexo::accumulator::{pollard::Pollard, proof::Proof};
+    ///   let acc = Pollard::new();
+    ///   // Creates a tree with those values as leafs
+    ///   let test_values:Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7];
+    ///   // Targets are nodes witch we intend to prove
+    ///   let targets = vec![0];
+    ///
+    ///   let mut proof_hashes = Vec::new();
+    ///   // This tree will look like this
+    ///   // 14
+    ///   // |-----------------\
+    ///   // 12                13
+    ///   // |---------\       |--------\
+    ///   // 08       09       10       11
+    ///   // |----\   |----\   |----\   |----\
+    ///   // 00   01  02   03  04   05  06   07
+    ///   // For proving 0, we need 01, 09 and 13's hashes. 00, 08, 12 and 14 can be calculated
+    ///   proof_hashes.push(Sha256::from_str("4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a").unwrap());
+    ///   proof_hashes.push(Sha256::from_str("9576f4ade6e9bc3a6458b506ce3e4e890df29cb14cb5d3d887672aef55647a2b").unwrap());
+    ///   proof_hashes.push(Sha256::from_str("29590a14c1b09384b94a2c0e94bf821ca75b62eacebc47893397ca88e3bbcbd7").unwrap());
+    ///
+    ///   let mut hashes = Vec::new();
+    ///   for i in test_values {
+    ///       let mut engine = Sha256::engine();
+    ///       engine.input(&[i]);
+    ///       let hash = Sha256::from_engine(engine);
+    ///       hashes.push(hash);
+    ///   }
+    ///   let acc = acc.modify(hashes.clone(), vec![]).unwrap();
+    ///   let p = Proof::new(targets, proof_hashes);
+    ///   assert!(acc.verify(&vec![hashes[0]] , &p).expect("This proof is valid"));
+    ///```
+    pub fn verify(&self, del_hashes: &[Hash], proof: &Proof) -> Result<bool, String> {
+        let roots = self
+            .roots
+            .iter()
+            .map(|root| root.get_data())
+            .collect::<Vec<_>>();
+        proof.verify(del_hashes, &roots, self.leaves)
+    }
     /// Returns a reference to this acc roots. Usually, API consumers won't care much about
     /// roots, serialization should use standard APIs.
     pub fn get_roots(&self) -> &Vec<Node> {
         &self.roots
+    }
+    /// Proves that a given utxo is in the current Pollard, assuming it actually belong
+    /// to the set
+    /// # Example
+    /// ```
+    ///  use bitcoin_hashes::{sha256::Hash as Data, Hash, HashEngine};
+    ///  use rustreexo::accumulator::{proof::Proof, pollard::Pollard};
+    ///  use bitcoin_hashes::hex::FromHex;
+    ///  let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
+    ///  let hashes = values
+    ///      .into_iter()
+    ///      .map(|val| {
+    ///          let mut engine = Data::engine();
+    ///          engine.input(&[val]);
+    ///          Data::from_engine(engine)
+    ///      })
+    ///      .collect();
+    ///  // Add 8 leaves to the pollard
+    ///  let p = Pollard::new()
+    ///      .modify(hashes, vec![])
+    ///      .expect("Pollard should not fail");
+    ///  let proof = p.prove(&[0]).expect("This element is on tree");
+    ///  let hashes = [
+    ///      "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+    ///      "9576f4ade6e9bc3a6458b506ce3e4e890df29cb14cb5d3d887672aef55647a2b",
+    ///      "29590a14c1b09384b94a2c0e94bf821ca75b62eacebc47893397ca88e3bbcbd7",
+    ///  ]
+    ///  .iter()
+    ///  .map(|hash| Data::from_hex(hash).unwrap())
+    ///  .collect();
+    ///  let expected = Proof::new(vec![0], hashes);
+    ///  assert_eq!(proof, expected);
+    /// ```
+    pub fn prove(&self, targets: &[u64]) -> Result<Proof, String> {
+        // Nothing to prove
+        if self.roots.is_empty() || targets.is_empty() {
+            return Ok(Proof::default());
+        }
+        let total_rows = tree_rows(self.leaves);
+        let targets = detwin(targets.into(), total_rows);
+        let needed_pos = get_proof_positions(&targets, self.leaves, total_rows);
+        let mut hashes = vec![];
+        for pos in needed_pos {
+            let (_, node, _) = self.grab_node(pos)?;
+            hashes.push(node.get_data());
+        }
+        Ok(Proof::new(targets, hashes))
     }
     /// Deletes a single node from a Pollard. The algorithm works as follows:
     /// Grab a node, it's sibling and it's parent.
@@ -440,7 +535,8 @@ impl Pollard {
         roots
     }
     /// Deletes nodes from the accumulator
-    fn delete(mut self, stxos: Vec<u64>) -> Result<Vec<Node>, String> {
+    fn delete(mut self, mut stxos: Vec<u64>) -> Result<Vec<Node>, String> {
+        stxos.sort();
         let stxos = util::detwin(stxos, util::tree_rows(self.leaves));
         for stxo in stxos {
             self.delete_single(stxo)?;
@@ -518,6 +614,8 @@ impl Pollard {
 #[cfg(test)]
 mod test {
     use std::{str::FromStr, vec};
+
+    use crate::accumulator::{proof::Proof, stump::Stump};
 
     use super::{PolNode, Pollard};
     use bitcoin_hashes::{
@@ -785,6 +883,38 @@ mod test {
         assert_eq!(root, PolNode::default().into_rc());
     }
     #[test]
+    fn test_prove() {
+        let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let hashes: Vec<Data> = values.into_iter().map(hash_from_u8).collect();
+        let proof = Pollard::new()
+            .modify(hashes.clone(), vec![])
+            .unwrap()
+            .modify(vec![], vec![0, 3])
+            .unwrap()
+            .prove(&[5, 7])
+            .unwrap();
+        // Stump needs this proof
+        let del_proof_hashes = [
+            "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+            "dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986",
+            "29590a14c1b09384b94a2c0e94bf821ca75b62eacebc47893397ca88e3bbcbd7",
+        ]
+        .iter()
+        .map(|hash| Data::from_hex(hash).unwrap())
+        .collect();
+        // Just for feature compatibility test, do the same with a Stump and see if the proof
+        // passes
+        let del_proof = Proof::new(vec![0, 3], del_proof_hashes);
+        let stump = Stump::new()
+            .modify(&hashes, &vec![], &Proof::default())
+            .unwrap()
+            .0
+            .modify(&vec![], &vec![hashes[0], hashes[3]], &del_proof)
+            .unwrap()
+            .0;
+        assert_eq!(stump.verify(&vec![hashes[5], hashes[7]], &proof), Ok(true));
+    }
+    #[test]
     fn test_delete_non_root() {
         // Assuming this tree, if we delete `01`, 00 will move up to 08's position
         // 14
@@ -875,7 +1005,25 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(expected_roots, roots, "Test case failed {:?}", case);
     }
+    #[test]
+    fn test_multiple_modify() {
+        let initial_values = [0_u8, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            .iter()
+            .map(|val| hash_from_u8(*val))
+            .collect::<Vec<_>>();
+        let acc = Pollard::new().modify(initial_values, vec![]).unwrap();
+        let acc = acc.modify(vec![], vec![0, 5, 7]).unwrap();
+        let additional_values = [0_u8, 1, 2, 3, 4]
+            .iter()
+            .map(|val| hash_from_u8(*val))
+            .collect::<Vec<_>>();
+        let acc = acc.modify(additional_values, vec![16, 18]).unwrap();
 
+        assert_eq!(
+            acc.get_roots()[0].get_data().to_hex(),
+            String::from("4fa7bf57f49ac06a6a54c22d033a30abcde83f3244e04b94e161d6e99a530607")
+        );
+    }
     #[test]
     fn run_tests_from_cases() {
         #[derive(Deserialize)]
