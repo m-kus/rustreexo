@@ -108,6 +108,40 @@ impl Proof {
     pub fn new(targets: Vec<u64>, hashes: Vec<NodeHash>) -> Self {
         Proof { targets, hashes }
     }
+    pub fn deserialize<Reader: Read>(mut proof: Reader) -> std::io::Result<Proof> {
+        // targets
+        let mut n_targets = [0_u8; 8];
+        proof.read_exact(&mut n_targets)?;
+        let mut targets = vec![];
+        for _ in 0..u64::from_le_bytes(n_targets) {
+            let mut target = [0_u8; 8];
+            proof.read_exact(&mut target)?;
+            targets.push(u64::from_le_bytes(target));
+        }
+        // hashes
+        let mut n_hashes = [0_u8; 8];
+        proof.read_exact(&mut n_hashes)?;
+        let mut hashes = vec![];
+
+        for _ in 0..u64::from_le_bytes(n_targets) {
+            let mut hash = [0_u8; 32];
+            proof.read_exact(&mut hash)?;
+            hashes.push(sha256::Hash::from_inner(hash));
+        }
+        Ok(Proof { targets, hashes })
+    }
+    pub fn serialize(&self) -> std::io::Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        buffer.write_all(&self.targets.len().to_le_bytes())?;
+        for target in self.targets.iter() {
+            buffer.write_all(&target.to_le_bytes())?;
+        }
+        buffer.write_all(&self.hashes.len().to_le_bytes())?;
+        for hash in self.hashes.iter() {
+            buffer.write_all(&hash.into_inner())?;
+        }
+        Ok(buffer)
+    }
     /// Public interface for verifying proofs. Returns a result with a bool or an Error
     /// True means the proof is true given the current stump, false means the proof is
     /// not valid given the current stump.
