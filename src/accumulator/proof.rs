@@ -108,7 +108,7 @@ impl Proof {
     pub fn new(targets: Vec<u64>, hashes: Vec<NodeHash>) -> Self {
         Proof { targets, hashes }
     }
-    pub fn deserialize<Reader: Read>(mut proof: Reader) -> std::io::Result<Proof> {
+    pub fn deserialize<Reader: std::io::Read>(mut proof: Reader) -> std::io::Result<Proof> {
         // targets
         let mut n_targets = [0_u8; 8];
         proof.read_exact(&mut n_targets)?;
@@ -126,11 +126,12 @@ impl Proof {
         for _ in 0..u64::from_le_bytes(n_targets) {
             let mut hash = [0_u8; 32];
             proof.read_exact(&mut hash)?;
-            hashes.push(sha256::Hash::from_inner(hash));
+            hashes.push(NodeHash::from(hash));
         }
         Ok(Proof { targets, hashes })
     }
     pub fn serialize(&self) -> std::io::Result<Vec<u8>> {
+        use std::io::Write;
         let mut buffer = Vec::new();
         buffer.write_all(&self.targets.len().to_le_bytes())?;
         for target in self.targets.iter() {
@@ -138,7 +139,7 @@ impl Proof {
         }
         buffer.write_all(&self.hashes.len().to_le_bytes())?;
         for hash in self.hashes.iter() {
-            buffer.write_all(&hash.into_inner())?;
+            buffer.write_all(&**hash)?;
         }
         Ok(buffer)
     }

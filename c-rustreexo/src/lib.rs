@@ -1,12 +1,10 @@
 use bitcoin_hashes::{sha256, Hash};
-use std::{
-    alloc::{alloc, Layout},
-    ops::Deref,
-};
+use std::ops::Deref;
 
 /// A raw hash passed from C, this is internally identical to [sha256::Hash] except that we use
 /// use a repr(C) to make it compatible to how C stores data. Shouldn't be used anywhere else
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CHash([u8; 32]);
 
 impl Deref for CHash {
@@ -58,19 +56,12 @@ macro_rules! check_ptr {
         }
     };
 }
-macro_rules! propagate_error {
-    ($errno: ident, $opt: ident) => {
-        if let Err(e) = $opt {
-            unsafe {
-                *$errno = e;
-                return crate::EXIT_FAILURE;
-            }
-        }
-    };
-}
 
-fn get_safe_ty<T>(thing: *mut T) -> T {
-    unsafe { thing.read() }
+fn get_safe_ty<T>(thing: *mut T) -> &'static T {
+    unsafe { thing.as_ref().unwrap() }
+}
+fn get_owned<T>(thing: *mut T) -> Box<T> {
+    unsafe { Box::from_raw(thing) }
 }
 fn get_slice<'a, T>(slice: *mut T, length: usize) -> &'a [T] {
     if length == 0 {
@@ -78,17 +69,11 @@ fn get_slice<'a, T>(slice: *mut T, length: usize) -> &'a [T] {
     }
     unsafe { std::slice::from_raw_parts(slice, length) }
 }
-fn alloc_and_set<T>(dst: *mut *mut T, new_value: T) -> Result<(), Error> {
-    let layout = Layout::new::<T>();
-    let ptr = unsafe { alloc(layout) as *mut T };
-    if ptr.is_null() {
-        return Err(Error::AllocationError);
+fn get_slice_const<'a, T>(slice: *const T, length: usize) -> &'a [T] {
+    if length == 0 {
+        return &[];
     }
-    unsafe {
-        *ptr.as_mut().unwrap() = new_value;
-        dst.replace(ptr);
-    }
-    Ok(())
+    unsafe { std::slice::from_raw_parts(slice, length) }
 }
 
 pub mod misc;

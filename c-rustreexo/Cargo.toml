@@ -4,7 +4,7 @@ description = "C Bindings for rustreexo"
 version = "0.1.0"
 authors = ["Davidson Souza <davidson.lucas.souza@gmail.com>"]
 license = "MIT"
-edition = "2021"
+edition = "2018"
 
 [lib]
 name = "c_rustreexo"

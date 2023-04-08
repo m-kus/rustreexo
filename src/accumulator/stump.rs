@@ -444,6 +444,7 @@ mod test {
 
         assert!(s_new == s_old_copy);
     }
+
     #[test]
     fn run_test_cases() {
         #[derive(Deserialize)]
