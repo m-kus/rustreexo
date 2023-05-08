@@ -4,7 +4,8 @@ import Cython
 from distutils.extension import Extension
 setup(
     ext_modules=cythonize([
-    Extension("mylibrary", ["mylibrary.pyx"],
-              libraries=[":libc_rustreexo.so"])
+    Extension("pytreexo", ["pytreexo.pyx"],
+              libraries=[":libc_rustreexo.so"],
+              library_dirs=["../"])
     ])
 )
