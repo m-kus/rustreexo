@@ -38,12 +38,17 @@
 //! assert_eq!(parent, expected_parent);
 //! ```
 use bitcoin_hashes::{hex, sha256, sha512_256, Hash, HashEngine};
-use std::{convert::TryFrom, fmt::Display, ops::Deref, str::FromStr};
+use std::{
+    convert::TryFrom,
+    fmt::{Debug, Display},
+    ops::Deref,
+    str::FromStr,
+};
 
 #[cfg(feature = "with-serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash, PartialOrd, Ord)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
 /// NodeHash is a wrapper around a 32 byte array that represents a hash of a node in the tree.
 /// # Example
@@ -78,6 +83,11 @@ impl Display for NodeHash {
         } else {
             write!(f, "empty")
         }
+    }
+}
+impl Debug for NodeHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

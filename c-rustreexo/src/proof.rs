@@ -28,7 +28,9 @@ pub unsafe extern "C" fn rustreexo_proof_create(
         .iter()
         .map(|hash| NodeHash::from(**hash))
         .collect::<Vec<_>>();
+
     let proof = Proof::new(targets.to_vec(), hashes);
+
     unsafe {
         ret.write(Box::into_raw(Box::new(proof)));
     }
