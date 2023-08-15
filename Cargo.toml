@@ -13,6 +13,8 @@ homepage = "https://github.com/mit-dci/rustreexo"
 [dependencies]
 bitcoin_hashes = "0.12.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
+[workspace]
+members = [".", "wasm"]
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

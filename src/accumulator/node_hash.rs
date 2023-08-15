@@ -114,6 +114,21 @@ impl From<[u8; 32]> for NodeHash {
         NodeHash::Some(hash)
     }
 }
+impl From<Vec<u8>> for NodeHash {
+    fn from(hash: Vec<u8>) -> Self {
+        let mut inner = [0; 32];
+        inner.copy_from_slice(&hash);
+        NodeHash::Some(inner)
+    }
+}
+impl Into<Vec<u8>> for NodeHash {
+    fn into(self) -> Vec<u8> {
+        match self {
+            NodeHash::Some(inner) => inner.to_vec(),
+            _ => vec![],
+        }
+    }
+}
 impl From<&[u8; 32]> for NodeHash {
     fn from(hash: &[u8; 32]) -> Self {
         NodeHash::Some(*hash)
