@@ -1,0 +1,6 @@
+src/*.so
+src/rustreexo.py
+
+__pycache__/
+*.py[cod]
+*$py.class

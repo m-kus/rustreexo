@@ -1,0 +1,21 @@
+[package]
+name = "ffi"
+version = "0.1.0"
+edition = "2018"
+license = "MIT"
+authors = ["Davidson Souza"]
+
+[dependencies]
+uniffi = { version = "0.24.3", features = ["bindgen", "build", "cli"] }
+rustreexo = "0.1.0"
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "rustreexo"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[build-dependencies]
+uniffi = { version = "0.24", features = ["build"] }

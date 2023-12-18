@@ -1,0 +1,22 @@
+namespace rustreexo {
+
+};
+
+interface Proof {
+	constructor();
+};
+
+[Error]
+enum RustreexoError {
+	"GenericError",
+};
+
+dictionary NodeHash {
+	sequence<u8> bytes;
+};
+
+interface Stump {
+    constructor();
+	[Throws=RustreexoError]
+	void modify(sequence<NodeHash> utxos, sequence<NodeHash> stxos, [ByRef] Proof proof);
+};
