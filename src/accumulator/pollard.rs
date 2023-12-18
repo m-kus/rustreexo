@@ -605,7 +605,14 @@ mod test {
         assert_eq!(target, found_target.data.get());
         assert_eq!(sibling, found_sibling.data.get());
     }
-
+    #[test]
+    fn test() {
+        let mut p = Pollard::new();
+        let utxos = (0..8).into_iter().map(hash_from_u8).collect::<Vec<_>>();
+        p.modify(&utxos, &[]).unwrap();
+        //p.modify(&[], &[utxos[0]]).unwrap();
+        println!("{p:?}");
+    }
     #[test]
     fn test_delete() {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7];

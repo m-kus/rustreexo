@@ -301,7 +301,6 @@ mod test {
         expected_roots: Vec<String>,
         proofhashes: Option<Vec<String>>,
     }
-
     #[test]
     // Make a few simple tests about stump creation
     fn test_stump() {
