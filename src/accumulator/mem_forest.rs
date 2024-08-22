@@ -1,20 +1,20 @@
-//! A full Pollard accumulator implementation. This is a simple version of the forest,
+//! A full MemForest accumulator implementation. This is a simple version of the forest,
 //! that keeps every node in memory. This is may require more memory, but is faster
 //! to update, prove and verify.
 //!
 //! # Example
 //! ```
 //! use rustreexo::accumulator::node_hash::NodeHash;
-//! use rustreexo::accumulator::pollard::Pollard;
+//! use rustreexo::accumulator::mem_forest::MemForest;
 //! let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
 //! let hashes: Vec<NodeHash> = values
 //!     .into_iter()
 //!     .map(|i| NodeHash::from([i; 32]))
 //!     .collect();
 //!
-//! let mut p = Pollard::new();
+//! let mut p = MemForest::new();
 //!
-//! p.modify(&hashes, &[]).expect("Pollard should not fail");
+//! p.modify(&hashes, &[]).expect("MemForest should not fail");
 //! assert_eq!(p.get_roots().len(), 1);
 //!
 //! p.modify(&[], &hashes).expect("Still should not fail"); // Remove leaves from the accumulator
@@ -176,10 +176,10 @@ impl Debug for Node {
         write!(f, "{:02x}{:02x}", self.data.get()[0], self.data.get()[1])
     }
 }
-/// The actual Pollard accumulator, it implements all methods required to update the forest
+/// The actual MemForest accumulator, it implements all methods required to update the forest
 /// and to prove/verify membership.
 #[derive(Default, Clone)]
-pub struct Pollard {
+pub struct MemForest {
     /// The roots of the forest, all leaves are children of these roots, and therefore
     /// owned by them.
     roots: Vec<Rc<Node>>,
@@ -190,29 +190,29 @@ pub struct Pollard {
     /// leaves when proving membership.
     map: HashMap<NodeHash, Weak<Node>>,
 }
-impl Pollard {
-    /// Creates a new empty [Pollard].
+impl MemForest {
+    /// Creates a new empty [MemForest].
     /// # Example
     /// ```
-    /// use rustreexo::accumulator::pollard::Pollard;
-    /// let mut pollard = Pollard::new();
+    /// use rustreexo::accumulator::mem_forest::MemForest;
+    /// let mut mem_forest = MemForest::new();
     /// ```
-    pub fn new() -> Pollard {
-        Pollard {
+    pub fn new() -> MemForest {
+        MemForest {
             map: HashMap::new(),
             roots: Vec::new(),
             leaves: 0,
         }
     }
-    /// Writes the Pollard to a writer. Used to send the accumulator over the wire
+    /// Writes the MemForest to a writer. Used to send the accumulator over the wire
     /// or to disk.
     /// # Example
     /// ```
-    /// use rustreexo::accumulator::pollard::Pollard;
+    /// use rustreexo::accumulator::mem_forest::MemForest;
     ///
-    /// let mut pollard = Pollard::new();
+    /// let mut mem_forest = MemForest::new();
     /// let mut serialized = Vec::new();
-    /// pollard.serialize(&mut serialized).unwrap();
+    /// mem_forest.serialize(&mut serialized).unwrap();
     ///
     /// assert_eq!(
     ///     serialized,
@@ -229,18 +229,18 @@ impl Pollard {
 
         Ok(())
     }
-    /// Deserializes a pollard from a reader.
+    /// Deserializes a mem_forest from a reader.
     /// # Example
     /// ```
     /// use std::io::Cursor;
     ///
-    /// use rustreexo::accumulator::pollard::Pollard;
+    /// use rustreexo::accumulator::mem_forest::MemForest;
     /// let mut serialized = Cursor::new(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    /// let pollard = Pollard::deserialize(&mut serialized).unwrap();
-    /// assert_eq!(pollard.leaves, 0);
-    /// assert_eq!(pollard.get_roots().len(), 0);
+    /// let mem_forest = MemForest::deserialize(&mut serialized).unwrap();
+    /// assert_eq!(mem_forest.leaves, 0);
+    /// assert_eq!(mem_forest.get_roots().len(), 0);
     /// ```
-    pub fn deserialize<R: Read>(mut reader: R) -> std::io::Result<Pollard> {
+    pub fn deserialize<R: Read>(mut reader: R) -> std::io::Result<MemForest> {
         fn read_u64<R: Read>(reader: &mut R) -> std::io::Result<u64> {
             let mut buf = [0u8; 8];
             reader.read_exact(&mut buf)?;
@@ -255,7 +255,7 @@ impl Pollard {
             map.extend(_map);
             roots.push(root);
         }
-        Ok(Pollard { roots, leaves, map })
+        Ok(MemForest { roots, leaves, map })
     }
     /// Returns the hash of a given position in the tree.
     fn get_hash(&self, pos: u64) -> Result<NodeHash, String> {
@@ -267,15 +267,15 @@ impl Pollard {
     /// # Example
     /// ```
     /// use rustreexo::accumulator::node_hash::NodeHash;
-    /// use rustreexo::accumulator::pollard::Pollard;
-    /// let mut pollard = Pollard::new();
+    /// use rustreexo::accumulator::mem_forest::MemForest;
+    /// let mut mem_forest = MemForest::new();
     /// let hashes = vec![0, 1, 2, 3, 4, 5, 6, 7]
     ///     .iter()
     ///     .map(|n| NodeHash::from([*n; 32]))
     ///     .collect::<Vec<_>>();
-    /// pollard.modify(&hashes, &[]).unwrap();
+    /// mem_forest.modify(&hashes, &[]).unwrap();
     /// // We want to prove that the first two hashes are in the accumulator.
-    /// let proof = pollard.prove(&[hashes[1], hashes[0]]).unwrap();
+    /// let proof = mem_forest.prove(&[hashes[1], hashes[0]]).unwrap();
     /// //TODO: Verify the proof
     /// ```
     pub fn prove(&self, targets: &[NodeHash]) -> Result<Proof, String> {
@@ -292,12 +292,12 @@ impl Pollard {
             .collect::<Vec<_>>();
         Ok(Proof::new(positions, proof))
     }
-    /// Returns a reference to the roots in this Pollard.
+    /// Returns a reference to the roots in this MemForest.
     pub fn get_roots(&self) -> &[Rc<Node>] {
         &self.roots
     }
-    /// Modify is the main API to a [Pollard]. Because order matters, you can only `modify`
-    /// a [Pollard], and internally it'll add and delete, in the correct order.
+    /// Modify is the main API to a [MemForest]. Because order matters, you can only `modify`
+    /// a [MemForest], and internally it'll add and delete, in the correct order.
     ///
     /// This method accepts two vectors as parameter, a vec of [Hash] and a vec of [u64]. The
     /// first one is a vec of leaf hashes for the newly created UTXOs. The second one is the position
@@ -309,7 +309,7 @@ impl Pollard {
     /// use bitcoin_hashes::Hash;
     /// use bitcoin_hashes::HashEngine;
     /// use rustreexo::accumulator::node_hash::NodeHash;
-    /// use rustreexo::accumulator::pollard::Pollard;
+    /// use rustreexo::accumulator::mem_forest::MemForest;
     /// let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
     /// let hashes = values
     ///     .into_iter()
@@ -319,9 +319,9 @@ impl Pollard {
     ///         NodeHash::from(Data::from_engine(engine).as_byte_array())
     ///     })
     ///     .collect::<Vec<_>>();
-    /// // Add 8 leaves to the pollard
-    /// let mut p = Pollard::new();
-    /// p.modify(&hashes, &[]).expect("Pollard should not fail");
+    /// // Add 8 leaves to the mem_forest
+    /// let mut p = MemForest::new();
+    /// p.modify(&hashes, &[]).expect("MemForest should not fail");
     ///
     /// assert_eq!(
     ///     p.get_roots()[0].get_data().to_string(),
@@ -543,7 +543,7 @@ impl Pollard {
             self.add_single(*value);
         }
     }
-    /// to_string returns the full pollard in a string for all forests less than 6 rows.
+    /// to_string returns the full mem_forest in a string for all forests less than 6 rows.
     fn string(&self) -> String {
         if self.leaves == 0 {
             return "empty".to_owned();
@@ -610,12 +610,12 @@ impl Pollard {
     }
 }
 
-impl Debug for Pollard {
+impl Debug for MemForest {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}", self.string())
     }
 }
-impl Display for Pollard {
+impl Display for MemForest {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}", self.string())
     }
@@ -632,9 +632,9 @@ mod test {
     use bitcoin_hashes::HashEngine;
     use serde::Deserialize;
 
-    use super::Pollard;
+    use super::MemForest;
     use crate::accumulator::node_hash::NodeHash;
-    use crate::accumulator::pollard::Node;
+    use crate::accumulator::mem_forest::Node;
     use crate::accumulator::proof::Proof;
 
     fn hash_from_u8(value: u8) -> NodeHash {
@@ -649,8 +649,8 @@ mod test {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let hashes = values.into_iter().map(hash_from_u8).collect::<Vec<_>>();
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Pollard should not fail");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("MemForest should not fail");
         let (found_target, found_sibling, _) = p.grab_node(4).unwrap();
         let target =
             NodeHash::try_from("e52d9c508c502347344d8c07ad91cbd6068afc75ff6292f062a09ca381c89e71")
@@ -668,8 +668,8 @@ mod test {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let hashes = values.into_iter().map(hash_from_u8).collect::<Vec<_>>();
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Pollard should not fail");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("MemForest should not fail");
         p.modify(&[], &[hashes[0]]).expect("msg");
 
         let (node, _, _) = p.grab_node(8).unwrap();
@@ -682,7 +682,7 @@ mod test {
     fn test_proof_verify() {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let hashes = values.into_iter().map(hash_from_u8).collect::<Vec<_>>();
-        let mut p = Pollard::new();
+        let mut p = MemForest::new();
         p.modify(&hashes, &[]).unwrap();
 
         let proof = p.prove(&[hashes[0], hashes[1]]).unwrap();
@@ -693,7 +693,7 @@ mod test {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let hashes = values.into_iter().map(hash_from_u8).collect::<Vec<_>>();
 
-        let mut acc = Pollard::new();
+        let mut acc = MemForest::new();
         acc.add(&hashes);
 
         assert_eq!(
@@ -724,8 +724,8 @@ mod test {
         let values = vec![0, 1];
         let hashes: Vec<NodeHash> = values.into_iter().map(hash_from_u8).collect();
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Pollard should not fail");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("MemForest should not fail");
         p.del_single(&p.grab_node(1).unwrap().0);
         assert_eq!(p.get_roots().len(), 1);
 
@@ -745,8 +745,8 @@ mod test {
         let values = vec![0, 1];
         let hashes: Vec<NodeHash> = values.into_iter().map(hash_from_u8).collect();
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Pollard should not fail");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("MemForest should not fail");
         p.del_single(&p.grab_node(2).unwrap().0);
         assert_eq!(p.get_roots().len(), 1);
         let root = p.get_roots()[0].clone();
@@ -776,8 +776,8 @@ mod test {
         let values = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let hashes: Vec<NodeHash> = values.into_iter().map(hash_from_u8).collect();
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Pollard should not fail");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("MemForest should not fail");
         p.modify(&[], &[hashes[1]]).expect("Still should not fail");
 
         assert_eq!(p.roots.len(), 1);
@@ -796,8 +796,8 @@ mod test {
             .iter()
             .map(|preimage| hash_from_u8(*preimage))
             .collect::<Vec<_>>();
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         assert_eq!(p.get_roots().len(), case.expected_roots.len());
         let expected_roots = case
             .expected_roots
@@ -824,8 +824,8 @@ mod test {
             .iter()
             .map(|pos| hashes[*pos as usize])
             .collect::<Vec<_>>();
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         p.modify(&[], &dels).expect("still should be valid");
 
         assert_eq!(p.get_roots().len(), case.expected_roots.len());
@@ -865,8 +865,8 @@ mod test {
     #[test]
     fn test_to_string() {
         let hashes = get_hash_vec_of(&(0..255).collect::<Vec<_>>());
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         assert_eq!(
             Some("Can't print 255 leaves. roots:"),
             p.to_string().get(0..30)
@@ -883,8 +883,8 @@ mod test {
             };
         }
         let hashes = get_hash_vec_of(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         test_get_pos!(p, 0);
         test_get_pos!(p, 1);
         test_get_pos!(p, 2);
@@ -916,8 +916,8 @@ mod test {
     #[test]
     fn test_serialize_one() {
         let hashes = get_hash_vec_of(&[0, 1, 2, 3, 4, 5, 6, 7]);
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         p.modify(&[], &[hashes[0]]).expect("can remove 0");
         let mut writer = std::io::Cursor::new(Vec::new());
         p.get_roots()[0].write_one(&mut writer).unwrap();
@@ -928,13 +928,13 @@ mod test {
     #[test]
     fn test_serialization() {
         let hashes = get_hash_vec_of(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
         p.modify(&[], &[hashes[0]]).expect("can remove 0");
         let mut writer = std::io::Cursor::new(Vec::new());
         p.serialize(&mut writer).unwrap();
         let deserialized =
-            Pollard::deserialize(&mut std::io::Cursor::new(writer.into_inner())).unwrap();
+            MemForest::deserialize(&mut std::io::Cursor::new(writer.into_inner())).unwrap();
         assert_eq!(
             deserialized.get_roots()[0].get_data(),
             p.get_roots()[0].get_data()
@@ -947,8 +947,8 @@ mod test {
         let hashes = get_hash_vec_of(&[0, 1, 2, 3, 4, 5, 6, 7]);
         let del_hashes = [hashes[2], hashes[1], hashes[4], hashes[6]];
 
-        let mut p = Pollard::new();
-        p.modify(&hashes, &[]).expect("Test pollards are valid");
+        let mut p = MemForest::new();
+        p.modify(&hashes, &[]).expect("Test mem_forests are valid");
 
         let proof = p.prove(&del_hashes).expect("Should be able to prove");
 
@@ -978,13 +978,13 @@ mod test {
 
     #[test]
     fn test_display_empty() {
-        let p = Pollard::new();
+        let p = MemForest::new();
         let _ = p.to_string();
     }
 
     #[test]
     fn test_serialization_roundtrip() {
-        let mut p = Pollard::new();
+        let mut p = MemForest::new();
         let values = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let hashes: Vec<NodeHash> = values
             .into_iter()
@@ -1000,7 +1000,7 @@ mod test {
         assert_eq!(p.leaves, 16);
         let mut serialized = Vec::<u8>::new();
         p.serialize(&mut serialized).expect("serialize should work");
-        let deserialized = Pollard::deserialize(&*serialized).expect("deserialize should work");
+        let deserialized = MemForest::deserialize(&*serialized).expect("deserialize should work");
         assert_eq!(deserialized.get_roots().len(), 1);
         assert!(deserialized.get_roots()[0].get_data().is_empty());
         assert_eq!(deserialized.leaves, 16);
