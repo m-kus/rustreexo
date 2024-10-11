@@ -51,11 +51,14 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::io::Write;
+use std::u64;
 
 #[cfg(feature = "with-serde")]
 use serde::Deserialize;
 #[cfg(feature = "with-serde")]
 use serde::Serialize;
+
+use crate::accumulator::proof;
 
 use super::node_hash::NodeHash;
 use super::stump::UpdateData;
@@ -208,10 +211,16 @@ impl Proof {
         }
 
         let mut calculated_roots: std::iter::Peekable<std::vec::IntoIter<NodeHash>> = self
-            .calculate_hashes(del_hashes, num_leaves)?
+            .calculate_hashes_ex(del_hashes, num_leaves)?
             .1
             .into_iter()
             .peekable();
+
+        println!("Expected roots: {:?}", roots);
+        println!(
+            "Actual roots: {:?}",
+            calculated_roots.clone().collect::<Vec::<NodeHash>>()
+        );
 
         let mut number_matched_roots = 0;
 
@@ -435,6 +444,134 @@ impl Proof {
         Ok((nodes, calculated_root_hashes))
     }
 
+    pub(crate) fn calculate_hashes_ex(
+        &self,
+        del_hashes: &[NodeHash],
+        num_leaves: u64,
+    ) -> Result<NodesAndRootsCurrent, String> {
+        // Where all the parent hashes we've calculated in a given row will go to.
+        let mut calculated_root_hashes = Vec::<NodeHash>::new();
+        // Target leaves
+        let mut leaf_nodes: Vec<(u64, NodeHash)> = self
+            .targets
+            .iter()
+            .copied()
+            .zip(del_hashes.to_owned())
+            .collect();
+        leaf_nodes.sort();
+        // Proof nodes
+        let mut sibling_nodes: Vec<NodeHash> = self.hashes.clone();
+        // Queue of computed intermediate nodes
+        let mut computed_nodes: Vec<(u64, NodeHash)> = Vec::new();
+        // Actual length of the current row
+        let mut actual_row_len = num_leaves;
+        // Length of the "padded" row which is always power of two
+        let mut row_len = num_leaves.next_power_of_two();
+        // Total padded length of processed rows (excluding the current one)
+        let mut row_len_acc = 0;
+        // Next position of the target leaf and the leaf itself
+        let (mut next_leaf_pos, mut next_leaf) = leaf_nodes.remove(0);
+        // Next computed node
+        let mut next_computed = NodeHash::Empty;
+        // Position of the next computed node
+        let mut next_computed_pos = u64::MAX;
+
+        while row_len != 0 {
+            println!("Begin: row_len={row_len} row_len_acc={row_len_acc} next_leaf_pos={next_leaf_pos}, next_computed_pos={next_computed_pos}");
+
+            let (pos, node) = if next_leaf_pos < next_computed_pos {
+                let res = (next_leaf_pos, next_leaf.clone());
+                if leaf_nodes.is_empty() {
+                    next_leaf_pos = u64::MAX;
+                } else {
+                    (next_leaf_pos, next_leaf) = leaf_nodes.remove(0);
+                }
+                res
+            } else if next_computed_pos != u64::MAX {
+                let res = (next_computed_pos, next_computed.clone());
+                if computed_nodes.is_empty() {
+                    next_computed_pos = u64::MAX;
+                } else {
+                    (next_computed_pos, next_computed) = computed_nodes.remove(0);
+                }
+                res
+            } else {
+                // Out of nodes, terminating here
+                break;
+            };
+
+            //println!("Node: next_pos={pos} next_hash={node}");
+            println!("Next: pos={pos} node={node} next_leaf_pos={next_leaf_pos}, next_computed_pos={next_computed_pos}");
+
+            // If we are beyond current row, level up
+            while pos >= row_len_acc + row_len {
+                row_len_acc += row_len;
+                row_len /= 2;
+                actual_row_len /= 2;
+                println!("Level up: row_len={row_len} row_len_acc={row_len_acc}")
+            }
+
+            // If row length is odd and we are at the edge this is a root
+            if pos == row_len_acc + actual_row_len - 1 && actual_row_len % 2 == 1 {
+                calculated_root_hashes.push(node);
+                row_len_acc += row_len;
+                row_len /= 2;
+                actual_row_len /= 2;
+                println!("Root: root={node}");
+                continue;
+            }
+
+            let parent_node = if (pos - row_len_acc) % 2 == 0 {
+                // Right sibling can be both leaf/computed or proof
+                let right_sibling = if next_leaf_pos == pos + 1 {
+                    let res = next_leaf.clone();
+                    if leaf_nodes.is_empty() {
+                        next_leaf_pos = u64::MAX;
+                    } else {
+                        (next_leaf_pos, next_leaf) = leaf_nodes.remove(0);
+                    }
+                    println!("Right: next_leaf_pos={next_leaf_pos}");
+                    res
+                } else if next_computed_pos == pos + 1 {
+                    let res = next_computed.clone();
+                    if computed_nodes.is_empty() {
+                        next_computed_pos = u64::MAX;
+                    } else {
+                        (next_computed_pos, next_computed) = computed_nodes.remove(0);
+                    }
+                    println!("Right: next_computed_pos={next_computed_pos}");
+                    res
+                } else {
+                    println!("Right: proof_len={}", sibling_nodes.len());
+                    sibling_nodes.remove(0)
+                };
+                //println!("Sibling: sibling_pos={} sibling_hash={right_sibling}", pos + 1);
+                NodeHash::parent_hash(&node, &right_sibling)
+            } else {
+                // Left sibling always from proof
+                println!("Left: proof_len={}", sibling_nodes.len());
+                let left_sibling = sibling_nodes.remove(0);
+                //println!("Sibling: sibling_pos={} sibling_hash={left_sibling}", pos - 1);
+                NodeHash::parent_hash(&left_sibling, &node)
+            };
+
+            let parent_pos = row_len_acc + row_len + (pos - row_len_acc) / 2;
+            println!("Parent: parent_pos={parent_pos} parent_hash={parent_node}");
+            if next_computed_pos == u64::MAX {
+                next_computed_pos = parent_pos;
+                next_computed = parent_node;
+            } else {
+                computed_nodes.push((parent_pos, parent_node));
+            }
+        }
+
+        assert!(sibling_nodes.is_empty());
+        assert!(computed_nodes.is_empty());
+        assert!(leaf_nodes.is_empty());
+
+        Ok((vec![], calculated_root_hashes))
+    }
+
     /// This function computes a set of roots from a proof.
     ///
     /// Using the proof, we should be able to calculate a subset of the roots, by hashing the
@@ -450,6 +587,7 @@ impl Proof {
     ) -> Result<NodesAndRootsCurrent, String> {
         // Where all the root hashes that we've calculated will go to.
         let total_rows = util::tree_rows(num_leaves);
+        println!("Total rows {total_rows}");
 
         // Where all the parent hashes we've calculated in a given row will go to.
         let mut calculated_root_hashes =
@@ -457,6 +595,7 @@ impl Proof {
 
         // the positions that should be passed as a proof
         let proof_positions = get_proof_positions(&self.targets, num_leaves, total_rows);
+        println!("Proof positions: {:?}", proof_positions);
 
         // As we calculate nodes upwards, it accumulates here
         let mut nodes: Vec<_> = self
@@ -486,6 +625,8 @@ impl Proof {
                 break;
             };
 
+            println!("Node: next_pos={next_pos} next_hash={next_hash}");
+
             if util::is_root_position(next_pos, num_leaves, total_rows) {
                 calculated_root_hashes.push(next_hash);
                 continue;
@@ -496,6 +637,8 @@ impl Proof {
                 Self::get_next(&computed, &nodes, &mut computed_index, &mut provided_index)
                     .ok_or(format!("Missing sibling for {}", next_pos))?;
 
+            println!("Sibling: sibling_pos={sibling_pos} sibling_hash={sibling_hash}");
+
             if sibling_pos != sibling {
                 return Err(format!("Missing sibling for {}", next_pos));
             }
@@ -503,6 +646,7 @@ impl Proof {
             let parent_hash = NodeHash::parent_hash(&next_hash, &sibling_hash);
             let parent = util::parent(next_pos, total_rows);
             computed.push((parent, parent_hash));
+            println!("Parent: parent_pos={parent} parent_hash={parent_hash}");
         }
 
         // we shouldn't return the hashes in the proof
@@ -828,7 +972,8 @@ mod tests {
     use crate::accumulator::node_hash::NodeHash;
     use crate::accumulator::stump::Stump;
     use crate::accumulator::util::hash_from_u8;
-    #[derive(Deserialize)]
+
+    #[derive(Deserialize, Debug)]
     struct TestCase {
         numleaves: usize,
         roots: Vec<String>,
@@ -1326,6 +1471,7 @@ mod tests {
     }
     fn run_single_case(case: &serde_json::Value) {
         let case = serde_json::from_value::<TestCase>(case.clone()).expect("Invalid test case");
+
         let roots = case
             .roots
             .into_iter()
