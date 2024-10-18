@@ -14,10 +14,19 @@
 //! use your custom hashes, just tweak the implementation of
 //! [NodeHash](crate::accumulator::node_hash::NodeHash) for your hash type.
 
+use std::str::FromStr;
+
 use rustreexo::accumulator::node_hash::AccumulatorHash;
 use rustreexo::accumulator::pollard::Pollard;
+use rustreexo::accumulator::proof::Proof;
+use serde::Deserialize;
+use serde::{Serialize, Serializer};
+use serde::ser::{SerializeStruct, SerializeSeq};
+use serde_json::ser;
 use starknet_crypto::poseidon_hash_many;
 use starknet_crypto::Felt;
+use num_bigint::BigInt;
+use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// We need a stateful wrapper around the actual hash, this is because we use those different
@@ -122,22 +131,158 @@ impl AccumulatorHash for PoseidonHash {
     }
 }
 
+// fn main() {
+//     // Create a vector with two utxos that will be added to the Pollard
+//     let elements = vec![
+//         PoseidonHash::Hash(Felt::from(1)),
+//         PoseidonHash::Hash(Felt::from(2)),
+//     ];
+
+//     // Create a new Pollard, and add the utxos to it
+//     let mut p = Pollard::<PoseidonHash>::new_with_hash();
+//     p.modify(&elements, &[]).unwrap();
+
+//     // Create a proof that the first utxo is in the Pollard
+//     let proof = p.prove(&[elements[0]]).unwrap();
+
+//     // check that the proof has exactly one target
+//     assert_eq!(proof.n_targets(), 1);
+//     // check that the proof is what we expect
+//     assert!(p.verify(&proof, &[elements[0]]).unwrap());
+// }
+
+#[derive(Deserialize)]
+struct TestsJSON {
+    insertion_tests: Vec<TestCase>,
+    deletion_tests: Vec<TestCase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TestCase {
+    leaf_preimages: Vec<u8>,
+    target_values: Option<Vec<u64>>,
+    expected_roots: Vec<String>,
+    proofhashes: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Debug)]
+struct Output {
+    state: State,
+    proof: BatchProof,
+    leaves_to_del: Vec<PoseidonHash>,
+    leaves_to_add: Vec<PoseidonHash>,
+    expected_state: State,
+}
+
+#[derive(Default, Serialize, Debug)]
+struct State {
+    roots: Vec<Root>,
+    leaves: u64,
+}
+
+#[derive(Default, Serialize, Debug)]
+struct BatchProof {
+    nodes: Vec<PoseidonHash>,
+    targets: Vec<u64>,
+}
+
 fn main() {
-    // Create a vector with two utxos that will be added to the Pollard
-    let elements = vec![
-        PoseidonHash::Hash(Felt::from(1)),
-        PoseidonHash::Hash(Felt::from(2)),
-    ];
+    let contents = std::fs::read_to_string("test_values/test_cases.json")
+        .expect("Something went wrong reading the file");
 
-    // Create a new Pollard, and add the utxos to it
-    let mut p = Pollard::<PoseidonHash>::new_with_hash();
-    p.modify(&elements, &[]).unwrap();
+    let tests = serde_json::from_str::<TestsJSON>(contents.as_str())
+        .expect("JSON deserialization error");
 
-    // Create a proof that the first utxo is in the Pollard
-    let proof = p.prove(&[elements[0]]).unwrap();
+    for (i, test_case) in tests.deletion_tests.into_iter().enumerate() {
+        let mut p = Pollard::<PoseidonHash>::new_with_hash();
+        let add: Vec<PoseidonHash> = test_case.leaf_preimages.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+        p.modify(&add, &[]).unwrap();
+        
+        let state = pollard_state(&p);
 
-    // check that the proof has exactly one target
-    assert_eq!(proof.n_targets(), 1);
-    // check that the proof is what we expect
-    assert!(p.verify(&proof, &[elements[0]]).unwrap());
+        let del = test_case
+            .target_values
+            .unwrap()
+            .iter()
+            .map(|&x| PoseidonHash::Hash(x.into()))
+            .collect::<Vec<_>>();
+        let proof = p.prove(&del).unwrap();
+
+        p.modify(&[], &del).unwrap();
+
+        let output = Output {
+            state,
+            proof: BatchProof {
+                nodes: proof.hashes,
+                targets: proof.targets,
+            },
+            leaves_to_del: del,
+            leaves_to_add: vec![],
+            expected_state: pollard_state(&p),
+        };
+        
+        let content = serde_json::to_string_pretty(&output).unwrap();
+        std::fs::write(format!("test_data/deletion_test_case_{i}.json"), content).unwrap();
+    }
+}
+
+fn pollard_state(p: &Pollard<PoseidonHash>) -> State {
+    State {
+        roots: p.get_roots().iter().map(|x| poseidon_hash_to_root(x.get_data())).collect(),
+        leaves: p.leaves,
+    }
+}
+
+fn poseidon_hash_to_root(hash: PoseidonHash) -> Root {
+    match hash {
+        PoseidonHash::Empty => Root(None),
+        PoseidonHash::Placeholder => unimplemented!(),
+        PoseidonHash::Hash(felt) => Root(Some(felt))
+    }
+}
+
+#[derive(Debug)]
+struct Root(pub Option<Felt>);
+
+impl Serialize for Root {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            None => {
+                let mut state = serializer.serialize_struct("PoseidonHash", 1)?;
+                state.serialize_field("variant_id", &1)?;
+                state.end()
+            }
+            Some(felt) => {
+                let value = serde_json::Number::from_str(&felt.to_string()).unwrap();
+                let mut state = serializer.serialize_struct("PoseidonHash", 2)?;
+                state.serialize_field("variant_id", &0)?;
+                state.serialize_field("value", &value)?;
+                state.end()
+            }
+        }
+    }
+}
+
+impl Serialize for PoseidonHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            PoseidonHash::Empty => {
+                Err(serde::ser::Error::custom("Unexpected Empty variant"))
+            }
+            PoseidonHash::Hash(felt) => {
+                serde_json::Number::from_str(&felt.to_string())
+                    .map_err(serde::ser::Error::custom)?
+                    .serialize(serializer)
+            }
+            PoseidonHash::Placeholder => {
+                Err(serde::ser::Error::custom("Unexpected Placeholder variant"))
+            }
+        }
+    }
 }
