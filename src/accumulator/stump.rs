@@ -631,7 +631,7 @@ mod test {
             assert_eq!(root, s.roots[i].to_string());
         }
     }
-
+   
     #[test]
     fn test_undo() {
         let mut hashes = vec![];

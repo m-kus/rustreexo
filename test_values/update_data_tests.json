@@ -1,6 +1,8 @@
 [
     {
         "initial_stump": "Add no leaf",
+        "init_add": [],
+        "init_del": [],
         "roots": [],
         "leaves": 0,
         "additional_preimages": [0, 1, 2, 3],
@@ -23,6 +25,8 @@
     },
     {
         "initial_stump": "Add six leaves [0, 1, 2, 3, 4, 5]",
+        "init_add": [0, 1, 2, 3, 4, 5],
+        "init_del": [],
         "roots": [
             "df46b17be5f66f0750a4b3efa26d4679db170a72d41eb56c3e4ff75a58c65386",
             "9eec588c41d87b16b0ee226cb38da3864f9537632321d8be855a73d5616dcc73"
@@ -52,6 +56,8 @@
     },
     {
         "initial_stump": "Add four leaves [0, 1, 2, 3] and remove them",
+        "init_add": [0, 1, 2, 3],
+        "init_del": [3, 1, 2, 0],
         "roots": [
             "0000000000000000000000000000000000000000000000000000000000000000"
         ],
@@ -99,6 +105,8 @@
     }    ,
     {
         "initial_stump": "Add four leaves [0, 1, 2, 3] and remove them",
+        "init_add": [0, 1, 2, 3],
+        "init_del": [2, 3, 0, 1],
         "roots": [
             "0000000000000000000000000000000000000000000000000000000000000000"
         ],
@@ -124,6 +132,8 @@
     },
     {
         "initial_stump":"Add six leaves [0, 1, 2, 3, 4, 5] and remove [0, 1, 2, 3]",
+        "init_add": [0, 1, 2, 3, 4, 5],
+        "init_del": [0, 1, 2, 3],
         "roots": [
             "0000000000000000000000000000000000000000000000000000000000000000",
             "9eec588c41d87b16b0ee226cb38da3864f9537632321d8be855a73d5616dcc73"
@@ -151,6 +161,8 @@
     },
     {
         "initial_stump": "Add six leaves [0, 1, 2, 3, 4, 5]",
+        "init_add": [0, 1, 2, 3, 4, 5],
+        "init_del": [],
         "roots": [
             "df46b17be5f66f0750a4b3efa26d4679db170a72d41eb56c3e4ff75a58c65386",
             "9eec588c41d87b16b0ee226cb38da3864f9537632321d8be855a73d5616dcc73"
@@ -191,6 +203,8 @@
     },
     {
         "initial_stump": "Add sixteen leaves [0..15]",
+        "init_add": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        "init_del": [],
         "roots": [
             "e121f8ffd6ca510cb55fe2d6373de3d018f7d2e9fbecb3a6d8342e1f9f6e6c7a"
         ],
@@ -257,6 +271,8 @@
     },
     {
         "initial_stump": "Add seventeen leaves [0..16] and remove [0, 2, 7, 10, 12, 14, 15, 16]",
+        "init_add": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "init_del": [],
         "roots": [
             "e121f8ffd6ca510cb55fe2d6373de3d018f7d2e9fbecb3a6d8342e1f9f6e6c7a",
             "c555eab45d08845ae9f10d452a99bfcb06f74a50b988fe7e48dd323789b88ee3"

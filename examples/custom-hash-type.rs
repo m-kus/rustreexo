@@ -18,15 +18,11 @@ use std::str::FromStr;
 
 use rustreexo::accumulator::node_hash::AccumulatorHash;
 use rustreexo::accumulator::pollard::Pollard;
-use rustreexo::accumulator::proof::Proof;
 use serde::Deserialize;
 use serde::{Serialize, Serializer};
-use serde::ser::{SerializeStruct, SerializeSeq};
-use serde_json::ser;
+use serde::ser::SerializeStruct;
 use starknet_crypto::poseidon_hash_many;
 use starknet_crypto::Felt;
-use num_bigint::BigInt;
-use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// We need a stateful wrapper around the actual hash, this is because we use those different
@@ -151,6 +147,70 @@ impl AccumulatorHash for PoseidonHash {
 //     assert!(p.verify(&proof, &[elements[0]]).unwrap());
 // }
 
+#[derive(Debug, Deserialize)]
+struct TestData {
+    init_add: Vec<u8>,
+    init_del: Vec<u8>,
+    roots: Vec<String>,
+    leaves: u64,
+    /// New data to add
+    additional_preimages: Vec<u64>,
+    /// The hash of all targets to be deleted
+    del_hashes: Vec<String>,
+    /// The hashes that are used to recompute a given Merkle path to the root
+    proof_hashes: Vec<String>,
+    /// Which nodes are being proven, in this case, they'll be deleted
+    proof_targets: Vec<u64>,
+    /// Here are the expected values:
+    /// During addition, we create those nodes
+    new_add_pos: Vec<u64>,
+    new_add_hash: Vec<String>,
+    /// And during deletion, we destroy or update those
+    new_del_pos: Vec<u64>,
+    new_del_hashes: Vec<String>,
+    to_destroy: Vec<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CachedTestData {
+    /// Blocks contains new utxos and utxos that are being deleted
+    update: UpdatedData,
+    /// The proof we have for our wallet's utxos
+    cached_proof: JsonProof,
+    init_add: Vec<u8>,
+    init_del: Vec<u8>,
+    /// A initial set of roots, may be empty for starting with an empty stump
+    initial_roots: Vec<String>,
+    /// The number of leaves in the initial Stump
+    initial_leaves: u64,
+    /// The hash of all wallet's utxo
+    cached_hashes: Vec<String>,
+    /// The indexes of all the new utxos to cache
+    remembers: Vec<u64>,
+    /// After we update our stump, which roots we expect?
+    expected_roots: Vec<String>,
+    /// After we update the proof, the proof's target should be this
+    expected_targets: Vec<u64>,
+    /// After we update the proof, the cached hashes should be this
+    expected_cached_hashes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonProof {
+    targets: Vec<u64>,
+    hashes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdatedData {
+    /// The newly created utxo to be added to our accumulator
+    adds: Vec<u64>,
+    /// The proof for all destroyed utxos
+    proof: JsonProof,
+    /// The hash of all destroyed utxos
+    del_hashes: Vec<String>,
+}
+
 #[derive(Deserialize)]
 struct TestsJSON {
     insertion_tests: Vec<TestCase>,
@@ -187,6 +247,7 @@ struct BatchProof {
 }
 
 fn main() {
+    // test_cases
     let contents = std::fs::read_to_string("test_values/test_cases.json")
         .expect("Something went wrong reading the file");
 
@@ -194,36 +255,143 @@ fn main() {
         .expect("JSON deserialization error");
 
     for (i, test_case) in tests.deletion_tests.into_iter().enumerate() {
-        let mut p = Pollard::<PoseidonHash>::new_with_hash();
-        let add: Vec<PoseidonHash> = test_case.leaf_preimages.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
-        p.modify(&add, &[]).unwrap();
-        
-        let state = pollard_state(&p);
-
-        let del = test_case
-            .target_values
-            .unwrap()
-            .iter()
-            .map(|&x| PoseidonHash::Hash(x.into()))
-            .collect::<Vec<_>>();
-        let proof = p.prove(&del).unwrap();
-
-        p.modify(&[], &del).unwrap();
-
-        let output = Output {
-            state,
-            proof: BatchProof {
-                nodes: proof.hashes,
-                targets: proof.targets,
-            },
-            leaves_to_del: del,
-            leaves_to_add: vec![],
-            expected_state: pollard_state(&p),
-        };
-        
-        let content = serde_json::to_string_pretty(&output).unwrap();
-        std::fs::write(format!("test_data/deletion_test_case_{i}.json"), content).unwrap();
+        handle_deletion_test_case(test_case, i);
     }
+
+    for (i, test_case) in tests.insertion_tests.into_iter().enumerate() {
+        handle_insertion_test_case(test_case, i);
+    }
+
+    // update_data_tests
+    let contents = std::fs::read_to_string("test_values/update_data_tests.json")
+        .expect("Something went wrong reading the file");
+
+    let tests = serde_json::from_str::<Vec<TestData>>(contents.as_str())
+        .expect("JSON deserialization error");
+
+    for (i, test_case) in tests.into_iter().enumerate() {
+        handle_update_data_test_case(test_case, i)
+    }
+
+    // cached_proof_tests
+    let contents = std::fs::read_to_string("test_values/cached_proof_tests.json")
+        .expect("Something went wrong reading the file");
+
+    let tests = serde_json::from_str::<Vec<CachedTestData>>(contents.as_str())
+        .expect("JSON deserialization error");
+
+    for (i, test_case) in tests.into_iter().enumerate() {
+        handle_cached_proof_test_case(test_case, i)
+    }
+}
+
+fn handle_deletion_test_case(test_case: TestCase, text_idx: usize) {
+    let mut p = Pollard::<PoseidonHash>::new_with_hash();
+    let add: Vec<PoseidonHash> = test_case.leaf_preimages.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&add, &[]).unwrap();
+    
+    let state = pollard_state(&p);
+
+    let del = test_case
+        .target_values
+        .unwrap()
+        .iter()
+        .map(|&x| PoseidonHash::Hash(x.into()))
+        .collect::<Vec<_>>();
+    let proof = p.prove(&del).unwrap();
+
+    p.modify(&[], &del).unwrap();
+
+    let output = Output {
+        state,
+        proof: BatchProof {
+            nodes: proof.hashes,
+            targets: proof.targets,
+        },
+        leaves_to_del: del,
+        leaves_to_add: vec![],
+        expected_state: pollard_state(&p),
+    };
+    
+    let content = serde_json::to_string_pretty(&output).unwrap();
+    std::fs::write(format!("test_data/deletion_test_case_{text_idx}.json"), content).unwrap();
+}
+
+fn handle_insertion_test_case(test_case: TestCase, text_idx: usize) {
+    let mut p = Pollard::<PoseidonHash>::new_with_hash();
+    let state = pollard_state(&p);
+
+    let add: Vec<PoseidonHash> = test_case.leaf_preimages.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&add, &[]).unwrap();
+
+    let output = Output {
+        state,
+        proof: BatchProof::default(),
+        leaves_to_del: vec![],
+        leaves_to_add: add,
+        expected_state: pollard_state(&p),
+    };
+    
+    let content = serde_json::to_string_pretty(&output).unwrap();
+    std::fs::write(format!("test_data/insertion_test_case_{text_idx}.json"), content).unwrap();
+}
+
+fn handle_update_data_test_case(data: TestData, text_idx: usize) {
+    let mut p = Pollard::<PoseidonHash>::new_with_hash();
+    let init_add: Vec<PoseidonHash> = data.init_add.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&init_add, &[]).unwrap();
+    let init_del: Vec<PoseidonHash> = data.init_del.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&[], &init_del).unwrap();
+    let state = pollard_state(&p);
+
+    // action
+    let add: Vec<PoseidonHash> = data.additional_preimages.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    let del: Vec<PoseidonHash> = data.proof_targets.iter().map(|&x| p.grab_node(x).unwrap().0.get_data()).collect();
+    let proof = p.prove(&del).unwrap();
+    p.modify(&add, &del).unwrap();
+
+    let output = Output {
+        state,
+        proof: BatchProof {
+            nodes: proof.hashes,
+            targets: proof.targets,
+        },
+        leaves_to_del: vec![],
+        leaves_to_add: add,
+        expected_state: pollard_state(&p),
+    };
+    
+    let content = serde_json::to_string_pretty(&output).unwrap();
+    std::fs::write(format!("test_data/update_data_test_case_{text_idx}.json"), content).unwrap();
+}
+
+fn handle_cached_proof_test_case(data: CachedTestData, text_idx: usize) {
+    let mut p = Pollard::<PoseidonHash>::new_with_hash();
+    let init_add: Vec<PoseidonHash> = data.init_add.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&init_add, &[]).unwrap();
+    let init_del: Vec<PoseidonHash> = data.init_del.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    p.modify(&[], &init_del).unwrap();
+    let state = pollard_state(&p);
+
+    // action
+    let add: Vec<PoseidonHash> = data.update.adds.iter().map(|&x| PoseidonHash::Hash(x.into())).collect();
+    let del: Vec<PoseidonHash> = data.update.proof.targets.iter().map(|&x| p.grab_node(x).unwrap().0.get_data()).collect();
+    let proof = p.prove(&del).unwrap();
+    p.modify(&add, &del).unwrap();
+
+    let output = Output {
+        state,
+        proof: BatchProof {
+            nodes: proof.hashes,
+            targets: proof.targets,
+        },
+        leaves_to_del: vec![],
+        leaves_to_add: add,
+        expected_state: pollard_state(&p),
+    };
+    
+    let content = serde_json::to_string_pretty(&output).unwrap();
+    std::fs::write(format!("test_data/cached_proof_test_case_{text_idx}.json"), content).unwrap();
 }
 
 fn pollard_state(p: &Pollard<PoseidonHash>) -> State {
