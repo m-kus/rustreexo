@@ -21,7 +21,7 @@ use rustreexo::accumulator::pollard::Pollard;
 use serde::Deserialize;
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
-use starknet_crypto::poseidon_hash_many;
+use starknet_crypto::poseidon_hash;
 use starknet_crypto::Felt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -118,7 +118,7 @@ impl AccumulatorHash for PoseidonHash {
     // **both** children are not empty.
     fn parent_hash(left: &Self, right: &Self) -> Self {
         if let (PoseidonHash::Hash(left), PoseidonHash::Hash(right)) = (left, right) {
-            return PoseidonHash::Hash(poseidon_hash_many(&[*left, *right]));
+            return PoseidonHash::Hash(poseidon_hash(*left, *right));
         }
 
         // This should never happen, since rustreexo won't call this method unless both children
@@ -356,7 +356,7 @@ fn handle_update_data_test_case(data: TestData, text_idx: usize) {
             nodes: proof.hashes,
             targets: proof.targets,
         },
-        leaves_to_del: vec![],
+        leaves_to_del: del,
         leaves_to_add: add,
         expected_state: pollard_state(&p),
     };
@@ -385,7 +385,7 @@ fn handle_cached_proof_test_case(data: CachedTestData, text_idx: usize) {
             nodes: proof.hashes,
             targets: proof.targets,
         },
-        leaves_to_del: vec![],
+        leaves_to_del: del,
         leaves_to_add: add,
         expected_state: pollard_state(&p),
     };
